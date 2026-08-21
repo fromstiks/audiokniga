@@ -31,3 +31,28 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
+
+- name: Отправить APK в Telegram
+        if: success()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID || '642163018' }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then
+            echo "Секрет TELEGRAM_BOT_TOKEN не задан — отправку пропускаю."
+            echo "APK по-прежнему доступен в разделе Artifacts этого запуска."
+            exit 0
+          fi
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' | head -1)
+          if [ -z "$APK" ]; then
+            echo "APK не найден, отправлять нечего."
+            exit 1
+          fi
+          SIZE=$(du -h "$APK" | cut -f1)
+          echo "Отправляю $APK ($SIZE) в Telegram"
+          curl -sS -f -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
+            -F chat_id="${TG_CHAT}" \
+            -F document=@"${APK}" \
+            -F caption="Аудиокнига · сборка ${GITHUB_SHA:0:7} · ветка ${GITHUB_REF_NAME} · ${SIZE}" \
+            -o /dev/null
+          echo "Отправлено."

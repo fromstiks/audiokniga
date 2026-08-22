@@ -41,6 +41,9 @@ class App : Application() {
             repository.observeCustomSources().collectLatest { ProviderRegistry.setCustomSources(it) }
         }
         scope.launch {
+            settings.disabledSources.collectLatest { ProviderRegistry.setDisabledBuiltIn(it) }
+        }
+        scope.launch {
             settings.skipSeconds.collectLatest { playback.skipMs = it * 1000L }
         }
 

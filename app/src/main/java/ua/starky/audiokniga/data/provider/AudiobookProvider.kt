@@ -22,6 +22,9 @@ interface AudiobookProvider {
     /** Подпись на вкладке поиска. Места там мало, поэтому по умолчанию — первое слово. */
     val shortName: String get() = displayName.substringBefore(' ').take(12)
 
+    /** Строка под названием на экране «Источники». */
+    val description: String get() = ""
+
     /** Можно ли скачивать файлы этого источника на устройство. */
     val supportsDownload: Boolean get() = true
 

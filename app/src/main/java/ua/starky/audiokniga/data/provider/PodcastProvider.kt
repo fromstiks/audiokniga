@@ -22,6 +22,7 @@ class PodcastProvider : AudiobookProvider {
     override val id: String = ID
     override val displayName: String = "Подкасты и озвучки"
     override val shortName: String = "Подкасты"
+    override val description: String = "Открытый каталог Apple, ищет и на русском"
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

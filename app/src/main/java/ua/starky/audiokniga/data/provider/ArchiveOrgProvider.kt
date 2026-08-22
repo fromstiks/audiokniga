@@ -23,6 +23,7 @@ class ArchiveOrgProvider : AudiobookProvider {
     override val id: String = ID
     override val displayName: String = "Internet Archive"
     override val shortName: String = "Archive"
+    override val description: String = "Крупнейший открытый архив: книги, радиопостановки, озвучки"
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

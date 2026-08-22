@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -26,6 +27,18 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setSkipSeconds(seconds: Int) = edit(KEY_SKIP, seconds)
 
+    /** Встроенные источники, которые пользователь убрал из поиска. */
+    val disabledSources: Flow<Set<String>> =
+        context.dataStore.data.map { it[KEY_DISABLED_SOURCES] ?: emptySet() }
+
+    suspend fun setSourceEnabled(providerId: String, enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[KEY_DISABLED_SOURCES] ?: emptySet()
+            prefs[KEY_DISABLED_SOURCES] =
+                if (enabled) current - providerId else current + providerId
+        }
+    }
+
     private suspend fun <T> edit(key: Preferences.Key<T>, value: T) {
         context.dataStore.edit { it[key] = value }
     }
@@ -36,5 +49,6 @@ class SettingsStore(private val context: Context) {
         private val KEY_THEME = intPreferencesKey("theme_mode")
         private val KEY_SPEED = floatPreferencesKey("playback_speed")
         private val KEY_SKIP = intPreferencesKey("skip_seconds")
+        private val KEY_DISABLED_SOURCES = stringSetPreferencesKey("disabled_sources")
     }
 }

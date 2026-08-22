@@ -21,6 +21,7 @@ class LibriVoxProvider : AudiobookProvider {
     override val id: String = ID
     override val displayName: String = "LibriVox"
     override val shortName: String = "LibriVox"
+    override val description: String = "Аудиокниги в общественном достоянии"
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 

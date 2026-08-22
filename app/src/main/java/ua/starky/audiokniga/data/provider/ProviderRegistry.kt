@@ -20,20 +20,41 @@ object ProviderRegistry {
     @Volatile
     private var custom: List<CustomProvider> = emptyList()
 
+    /** Встроенные источники, выключенные пользователем в настройках. */
+    @Volatile
+    private var disabledBuiltIn: Set<String> = emptySet()
+
+    /**
+     * Выключенные источники остаются в реестре — иначе книга, добавленная из такого
+     * источника, перестала бы открываться. Выключение убирает источник только из поиска.
+     */
     fun setCustomSources(sources: List<CustomSource>) {
-        custom = sources.filter { it.enabled }.map { CustomProvider(it) }
+        custom = sources.map { CustomProvider(it) }
+    }
+
+    fun setDisabledBuiltIn(ids: Set<String>) {
+        disabledBuiltIn = ids
     }
 
     val all: List<AudiobookProvider> get() = builtIn + custom
 
+    val builtInProviders: List<AudiobookProvider> get() = builtIn
+
     val customProviders: List<CustomProvider> get() = custom
+
+    fun isEnabled(provider: AudiobookProvider): Boolean = when (provider) {
+        is CustomProvider -> provider.source.enabled
+        else -> provider.id !in disabledBuiltIn
+    }
+
+    val enabled: List<AudiobookProvider> get() = all.filter { isEnabled(it) }
 
     /**
      * Источники, по которым имеет смысл искать словом. Ленту по ссылке обрабатывает
      * [RssProvider] отдельно — ему на вход нужен адрес, а не запрос.
      */
     val searchable: List<AudiobookProvider>
-        get() = all.filter { it.id != RssProvider.ID }
+        get() = enabled.filter { it.id != RssProvider.ID }
 
     fun byId(providerId: String): AudiobookProvider =
         all.firstOrNull { it.id == providerId }

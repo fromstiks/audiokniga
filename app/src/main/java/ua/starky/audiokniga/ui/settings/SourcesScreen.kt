@@ -59,6 +59,7 @@ fun SourcesScreen(
     onOpenBook: (String) -> Unit,
 ) {
     val sources by viewModel.customSources.collectAsStateWithLifecycle()
+    val disabled by viewModel.disabledSources.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val c = Neu.colors
@@ -78,7 +79,7 @@ fun SourcesScreen(
     ) {
         SectionHeader(
             title = "Источники",
-            subtitle = "${ProviderRegistry.all.size} подключено",
+            subtitle = "${ProviderRegistry.enabled.size} из ${ProviderRegistry.all.size} включено",
             onOpenDrawer = onOpenDrawer,
         )
 
@@ -91,10 +92,14 @@ fun SourcesScreen(
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BuiltInRow("Internet Archive", "Крупнейший открытый архив: книги, радиопостановки, озвучки")
-                    BuiltInRow("LibriVox", "Аудиокниги в общественном достоянии")
-                    BuiltInRow("Подкасты и озвучки", "Открытый каталог Apple, ищет и на русском")
-                    BuiltInRow("Ссылка на ленту", "Вставьте адрес RSS прямо в поле поиска")
+                    ProviderRegistry.builtInProviders.forEach { provider ->
+                        BuiltInRow(
+                            title = provider.displayName,
+                            note = provider.description,
+                            enabled = provider.id !in disabled,
+                            onToggle = { viewModel.setBuiltInEnabled(provider.id, provider.id in disabled) },
+                        )
+                    }
                 }
             }
 
@@ -181,21 +186,38 @@ fun SourcesScreen(
     }
 }
 
+/** Встроенный источник. Выключенный остаётся в списке, но выпадает из поиска. */
 @Composable
-private fun BuiltInRow(title: String, note: String) {
+private fun BuiltInRow(title: String, note: String, enabled: Boolean, onToggle: () -> Unit) {
     val c = Neu.colors
     Row(
         Modifier
             .fillMaxWidth()
             .neuRaised(RoundedCornerShape(16.dp), elevation = 4.dp)
+            .clickable(onClick = onToggle)
             .padding(horizontal = 13.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
-        Icon(AppIcons.Check, null, tint = c.accent, modifier = Modifier.size(15.dp))
+        Icon(
+            imageVector = if (enabled) AppIcons.Check else AppIcons.Close,
+            contentDescription = if (enabled) "Выключить источник" else "Включить источник",
+            tint = if (enabled) c.accent else c.inkFaint,
+            modifier = Modifier.size(15.dp),
+        )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = c.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-            Text(note, color = c.inkFaint, fontSize = 11.sp, lineHeight = 15.sp)
+            Text(
+                title,
+                color = if (enabled) c.ink else c.inkFaint,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+                if (enabled) note else "Выключен — в поиске не участвует",
+                color = c.inkFaint,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
+            )
         }
     }
 }
@@ -498,9 +520,16 @@ private fun CustomSourceRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                if (source.isSearchTemplate) "Ищет · нажмите, чтобы изменить"
-                else "Не ищет · нажмите, чтобы добавить ${CustomSource.QUERY_PLACEHOLDER}",
-                color = if (source.isSearchTemplate) c.accent else c.offline,
+                when {
+                    !source.enabled -> "Выключен — в поиске не участвует"
+                    source.isSearchTemplate -> "Ищет · нажмите, чтобы изменить"
+                    else -> "Не ищет · нажмите, чтобы добавить ${CustomSource.QUERY_PLACEHOLDER}"
+                },
+                color = when {
+                    !source.enabled -> c.inkFaint
+                    source.isSearchTemplate -> c.accent
+                    else -> c.offline
+                },
                 fontSize = 9.5.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.7.sp,

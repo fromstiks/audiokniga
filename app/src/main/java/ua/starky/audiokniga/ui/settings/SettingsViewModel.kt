@@ -31,6 +31,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val customSources: StateFlow<List<CustomSource>> = repo.observeCustomSources()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** Встроенные источники, убранные из поиска. */
+    val disabledSources: StateFlow<Set<String>> = settings.disabledSources
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptySet())
+
+    fun setBuiltInEnabled(providerId: String, enabled: Boolean) =
+        viewModelScope.launch { settings.setSourceEnabled(providerId, enabled) }
+
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 

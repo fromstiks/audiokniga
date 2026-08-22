@@ -1,5 +1,7 @@
 package ua.starky.audiokniga.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +43,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.starky.audiokniga.data.model.CustomSource
 import ua.starky.audiokniga.data.provider.ProviderRegistry
+import ua.starky.audiokniga.data.provider.SourceListFormat
 import ua.starky.audiokniga.ui.SectionHeader
 import ua.starky.audiokniga.ui.components.AppIcons
 import ua.starky.audiokniga.ui.components.NeuIconButton
@@ -69,6 +72,16 @@ fun SourcesScreen(
     var bulk by remember { mutableStateOf("") }
     var bulkMode by remember { mutableStateOf(false) }
     var editingId by remember { mutableStateOf<String?>(null) }
+
+    // Системный выбор файла: список из другого приложения проще принести файлом.
+    val importFile = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let(viewModel::importFromFile)
+    }
+    val exportFile = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        uri?.let(viewModel::exportToFile)
+    }
 
     Column(
         Modifier
@@ -105,6 +118,36 @@ fun SourcesScreen(
 
             item { Spacer(Modifier.height(6.dp)) }
             item { SectionLabel("Свои источники") }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FileButton(
+                        icon = AppIcons.Download,
+                        label = "Импорт из файла",
+                        accent = true,
+                        modifier = Modifier.weight(1f),
+                        // Форматы разные, поэтому не сужаем выбор по типу.
+                        onClick = { importFile.launch(arrayOf("*/*")) },
+                    )
+                    FileButton(
+                        icon = AppIcons.Link,
+                        label = "Сохранить в файл",
+                        accent = false,
+                        modifier = Modifier.weight(1f),
+                        onClick = { exportFile.launch("audiokniga-istochniki.txt") },
+                    )
+                }
+            }
+
+            item {
+                Text(
+                    "Файл может быть OPML из другой читалки, JSON или простой список: " +
+                        "по источнику в строке, «Название | адрес».",
+                    color = Neu.colors.inkFaint,
+                    fontSize = 11.sp,
+                    lineHeight = 16.sp,
+                )
+            }
 
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -222,6 +265,41 @@ private fun BuiltInRow(title: String, note: String, enabled: Boolean, onToggle: 
     }
 }
 
+/** Широкая кнопка с подписью — импорт и экспорт должны быть заметны, а не спрятаны. */
+@Composable
+private fun FileButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    accent: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = Neu.colors
+    Row(
+        modifier
+            .neuRaised(RoundedCornerShape(15.dp), elevation = 4.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(
+            icon,
+            null,
+            tint = if (accent) c.accent else c.inkMuted,
+            modifier = Modifier.size(14.dp),
+        )
+        Text(
+            label,
+            color = c.ink,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 /** Один источник или сразу список — вторым удобнее переносить готовый набор. */
 @Composable
 private fun ModeSwitch(bulkMode: Boolean, onChange: (Boolean) -> Unit) {
@@ -254,7 +332,7 @@ private fun ModeSwitch(bulkMode: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 private fun BulkAddForm(text: String, onChange: (String) -> Unit, onAdd: () -> Unit) {
     val c = Neu.colors
-    val count = remember(text) { CustomSource.parseList(text).size }
+    val count = remember(text) { SourceListFormat.count(text) }
     Column(
         Modifier
             .fillMaxWidth()

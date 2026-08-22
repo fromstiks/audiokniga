@@ -1,6 +1,9 @@
 package ua.starky.audiokniga.ui.settings
 
 import android.app.Application
+import android.net.Uri
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,6 +14,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ua.starky.audiokniga.app
 import ua.starky.audiokniga.data.model.CustomSource
+import ua.starky.audiokniga.data.provider.SourceListFormat
 import ua.starky.audiokniga.settings.SettingsStore
 
 /** Общая модель для «Источников» и «Настроек»: и то и другое — про подготовку приложения. */
@@ -76,10 +80,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
      * Вбивать два десятка адресов по одному — работа не для человека.
      */
     fun addSourcesFromText(text: String) {
-        val parsed = CustomSource.parseList(text)
+        val parsed = SourceListFormat.parse(text)
         if (parsed.isEmpty()) {
-            _message.value = "Не нашёл ни одного адреса. Каждый источник — с новой строки, " +
-                "адрес начинается с http:// или https://"
+            _message.value = "Не нашёл ни одного адреса. Подойдёт OPML, JSON или простой " +
+                "список: по источнику в строке, «Название | адрес» или просто адрес."
             return
         }
         viewModelScope.launch {
@@ -108,6 +112,48 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             } else {
                 "Источник сохранён. Без {q} в адресе он не ищет, а открывается целиком"
             }
+        }
+    }
+
+    /**
+     * Импорт списка источников из файла. Список из другого приложения проще выгрузить
+     * файлом, чем переписывать два десятка адресов руками.
+     */
+    fun importFromFile(uri: Uri) {
+        viewModelScope.launch {
+            val text = runCatching {
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver
+                        .openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                }
+            }.getOrNull()
+
+            if (text.isNullOrBlank()) {
+                _message.value = "Файл не прочитался или оказался пустым"
+                return@launch
+            }
+            addSourcesFromText(text)
+        }
+    }
+
+    /** Выгрузка своих источников в файл — чтобы перенести их или сохранить про запас. */
+    fun exportToFile(uri: Uri) {
+        viewModelScope.launch {
+            val list = customSources.value
+            if (list.isEmpty()) {
+                _message.value = "Своих источников пока нет"
+                return@launch
+            }
+            val body = SourceListFormat.format(list.map { it.name to it.url })
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    getApplication<Application>().contentResolver
+                        .openOutputStream(uri)?.bufferedWriter()?.use { it.write(body) }
+                        ?: error("нет доступа к файлу")
+                }
+            }
+                .onSuccess { _message.value = "Сохранено ${list.size} ${sourceWord(list.size)}" }
+                .onFailure { _message.value = "Не удалось сохранить: ${it.message}" }
         }
     }
 

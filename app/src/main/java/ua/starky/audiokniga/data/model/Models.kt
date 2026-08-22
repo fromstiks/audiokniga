@@ -84,5 +84,35 @@ data class CustomSource(
 
     companion object {
         const val QUERY_PLACEHOLDER = "{q}"
+
+        /**
+         * Разбирает список источников, вставленный одним куском.
+         *
+         * Строка — это «Название | адрес» либо просто адрес, тогда именем становится
+         * домен. Пустые строки и начинающиеся с # пропускаются, чтобы можно было
+         * держать список с комментариями.
+         */
+        fun parseList(text: String): List<Pair<String, String>> =
+            text.lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && !it.startsWith("#") }
+                .mapNotNull { line ->
+                    val name: String
+                    val url: String
+                    val separator = line.indexOf('|')
+                    if (separator >= 0) {
+                        name = line.substring(0, separator).trim()
+                        url = line.substring(separator + 1).trim()
+                    } else {
+                        // Разделителя нет — значит вся строка адрес, имя берём из домена.
+                        url = line
+                        name = ""
+                    }
+                    if (!url.startsWith("http", ignoreCase = true)) return@mapNotNull null
+                    val title = name.ifBlank { url.substringAfter("//").substringBefore('/') }
+                    title to url
+                }
+                .distinctBy { it.second }
+                .toList()
     }
 }

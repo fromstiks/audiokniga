@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -64,6 +65,8 @@ fun SourcesScreen(
 
     var name by remember { mutableStateOf("") }
     var url by remember { mutableStateOf("") }
+    var bulk by remember { mutableStateOf("") }
+    var bulkMode by remember { mutableStateOf(false) }
 
     Column(
         Modifier
@@ -98,16 +101,30 @@ fun SourcesScreen(
             item { SectionLabel("Свои источники") }
 
             item {
-                AddSourceForm(
-                    name = name,
-                    url = url,
-                    onNameChange = { name = it },
-                    onUrlChange = { url = it },
-                    onAdd = {
-                        viewModel.addSource(name, url)
-                        name = ""; url = ""
-                    },
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ModeSwitch(bulkMode = bulkMode, onChange = { bulkMode = it })
+                    if (bulkMode) {
+                        BulkAddForm(
+                            text = bulk,
+                            onChange = { bulk = it },
+                            onAdd = {
+                                viewModel.addSourcesFromText(bulk)
+                                bulk = ""
+                            },
+                        )
+                    } else {
+                        AddSourceForm(
+                            name = name,
+                            url = url,
+                            onNameChange = { name = it },
+                            onUrlChange = { url = it },
+                            onAdd = {
+                                viewModel.addSource(name, url)
+                                name = ""; url = ""
+                            },
+                        )
+                    }
+                }
             }
 
             if (sources.isEmpty()) {
@@ -166,6 +183,101 @@ private fun BuiltInRow(title: String, note: String) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(title, color = c.ink, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
             Text(note, color = c.inkFaint, fontSize = 11.sp, lineHeight = 15.sp)
+        }
+    }
+}
+
+/** Один источник или сразу список — вторым удобнее переносить готовый набор. */
+@Composable
+private fun ModeSwitch(bulkMode: Boolean, onChange: (Boolean) -> Unit) {
+    val c = Neu.colors
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        listOf(false to "По одному", true to "Списком").forEach { (mode, label) ->
+            val selected = mode == bulkMode
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(36.dp)
+                    .then(
+                        if (selected) Modifier.neuSunken(RoundedCornerShape(12.dp), depth = 3.dp)
+                        else Modifier.neuRaised(RoundedCornerShape(12.dp), elevation = 3.dp)
+                    )
+                    .clickable(enabled = !selected) { onChange(mode) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    label,
+                    color = if (selected) c.accent else c.inkMuted,
+                    fontSize = 12.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BulkAddForm(text: String, onChange: (String) -> Unit, onAdd: () -> Unit) {
+    val c = Neu.colors
+    val count = remember(text) { CustomSource.parseList(text).size }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .neuRaised(RoundedCornerShape(20.dp), elevation = 5.dp)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Text(
+            "По одному источнику в строке: «Название | адрес» или просто адрес. " +
+                "Строки, начинающиеся с #, пропускаются.",
+            color = c.inkFaint,
+            fontSize = 11.5.sp,
+            lineHeight = 16.sp,
+        )
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 120.dp)
+                .neuSunken(RoundedCornerShape(14.dp), depth = 3.dp)
+                .padding(horizontal = 13.dp, vertical = 12.dp),
+        ) {
+            if (text.isEmpty()) {
+                Text(
+                    "Мой подкаст | https://example.com/feed.xml\nhttps://example.com/audio/",
+                    color = c.inkFaint,
+                    fontSize = 12.sp,
+                    lineHeight = 18.sp,
+                )
+            }
+            BasicTextField(
+                value = text,
+                onValueChange = onChange,
+                textStyle = LocalTextStyle.current.copy(color = c.ink, fontSize = 12.sp, lineHeight = 18.sp),
+                cursorBrush = SolidColor(c.accent),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Row(
+            Modifier
+                .neuRaised(RoundedCornerShape(15.dp), elevation = 4.dp)
+                .clickable(enabled = count > 0, onClick = onAdd)
+                .padding(horizontal = 15.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(
+                AppIcons.Plus,
+                null,
+                tint = if (count == 0) c.inkFaint else c.accent,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                if (count == 0) "Вставьте список" else "Добавить · $count",
+                color = if (count == 0) c.inkFaint else c.ink,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+            )
         }
     }
 }

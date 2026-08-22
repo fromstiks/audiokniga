@@ -64,6 +64,30 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * Добавляет источники списком: по строке на источник, «Название | адрес» или просто адрес.
+     * Вбивать два десятка адресов по одному — работа не для человека.
+     */
+    fun addSourcesFromText(text: String) {
+        val parsed = CustomSource.parseList(text)
+        if (parsed.isEmpty()) {
+            _message.value = "Не нашёл ни одного адреса. Каждый источник — с новой строки, " +
+                "адрес начинается с http:// или https://"
+            return
+        }
+        viewModelScope.launch {
+            val added = repo.addCustomSources(parsed)
+            val lines = text.lineSequence().count { it.isNotBlank() && !it.trim().startsWith("#") }
+            _message.value = buildString {
+                append("Добавлено ")
+                append(added)
+                append(' ')
+                append(sourceWord(added))
+                if (lines > added) append(", пропущено строк: ${lines - added}")
+            }
+        }
+    }
+
     fun setEnabled(source: CustomSource, enabled: Boolean) =
         viewModelScope.launch { repo.setCustomSourceEnabled(source.id, enabled) }
 
@@ -87,4 +111,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun clearMessage() { _message.value = null }
+}
+
+private fun sourceWord(count: Int): String {
+    val mod100 = count % 100
+    val mod10 = count % 10
+    return when {
+        mod100 in 11..14 -> "источников"
+        mod10 == 1 -> "источник"
+        mod10 in 2..4 -> "источника"
+        else -> "источников"
+    }
 }

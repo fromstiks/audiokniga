@@ -211,6 +211,15 @@ class LibraryRepository(context: Context) {
         source
     }
 
+    /** Добавляет сразу несколько источников. Возвращает, сколько записано. */
+    suspend fun addCustomSources(sources: List<Pair<String, String>>): Int = withContext(Dispatchers.IO) {
+        var added = 0
+        for ((name, url) in sources) {
+            runCatching { addCustomSource(name, url) }.onSuccess { added++ }
+        }
+        added
+    }
+
     suspend fun setCustomSourceEnabled(id: String, enabled: Boolean) =
         customSources.setEnabled(id, enabled)
 

@@ -6,6 +6,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import org.jsoup.Jsoup
 import org.xmlpull.v1.XmlPullParser
 import java.io.StringReader
 import java.net.URI
@@ -241,39 +242,32 @@ object MediaScraper {
 
     // ——— Обычная веб-страница ———
 
+    /**
+     * Обычная веб-страница разбирается через настоящий DOM: регулярками по разметке
+     * не отличить `<audio><source>` от текста в комментарии и не развернуть
+     * относительный адрес. Jsoup делает и то и другое, а заодно переживает кривую
+     * вёрстку, которой на книжных сайтах хватает.
+     */
     private fun fromHtml(html: String, baseUrl: String, fallbackTitle: String): Found {
-        // Внутри скриптов и JSON слэши экранированы: "https:\/\/site.ru\/file.mp3".
-        // Пока их не развернуть, ссылка не распознаётся ни одним разумным выражением.
-        val text = html
-            .replace("\\/", "/")
-            .replace("\\u002F", "/", ignoreCase = true)
-            .replace("&amp;", "&")
+        val doc = runCatching { Jsoup.parse(html, baseUrl) }.getOrNull()
+            ?: return Found(fallbackTitle, null, null, null, emptyList(), newestFirst = false)
 
-        // Порядок глав задаётся порядком в странице, поэтому запоминаем, где нашли.
-        val hits = mutableListOf<Pair<Int, String>>()
-
-        // 1. Ссылки в атрибутах — самый надёжный случай.
-        LINK_PATTERN.findAll(text).forEach { match ->
-            val value = match.groupValues.getOrNull(1) ?: return@forEach
-            if (value.looksLikeAudio()) hits += match.range.first to value
+        // Порядок обхода документа — он же порядок глав.
+        val urls = LinkedHashSet<String>()
+        for (element in doc.allElements) {
+            for (attribute in AUDIO_ATTRIBUTES) {
+                if (!element.hasAttr(attribute)) continue
+                // absUrl сам достраивает относительный путь до полного.
+                val value = element.absUrl(attribute).ifBlank { element.attr(attribute) }
+                if (value.looksLikeAudio()) urls += value
+            }
         }
 
-        // 2. Полные адреса где угодно в тексте: плееры часто получают файл из
-        //    встроенного скрипта, и в href такая ссылка не попадает вовсе.
-        ABSOLUTE_AUDIO_PATTERN.findAll(text).forEach { hits += it.range.first to it.value }
+        // Плеер часто получает файл из встроенного скрипта: в DOM такой ссылки нет
+        // вовсе, поэтому вторым заходом просматриваем исходный текст страницы.
+        urls += audioUrlsIn(html, baseUrl)
 
-        // 3. Пути от корня сайта — только в начале строкового литерала, иначе
-        //    выражение цепляло бы хвост уже найденного полного адреса.
-        RELATIVE_AUDIO_PATTERN.findAll(text).forEach { match ->
-            match.groupValues.getOrNull(1)?.let { hits += match.range.first to it }
-        }
-
-        val links = hits
-            .sortedBy { it.first }
-            .map { it.second.absolute(baseUrl) }
-            .distinct()
-
-        val tracks = links.mapIndexed { index, url ->
+        val tracks = urls.mapIndexed { index, url ->
             Track(
                 title = runCatching { URI(url).path }.getOrNull()
                     ?.substringAfterLast('/')?.substringBeforeLast('.')
@@ -284,16 +278,36 @@ object MediaScraper {
             )
         }
 
-        val pageTitle = TITLE_PATTERN.find(html)?.groupValues?.getOrNull(1)?.stripHtml()
-
         return Found(
-            title = pageTitle?.takeIf { it.isNotBlank() } ?: fallbackTitle,
-            author = null,
-            cover = OG_IMAGE_PATTERN.find(html)?.groupValues?.getOrNull(1)?.absolute(baseUrl),
-            description = null,
+            title = doc.title().trim().takeIf { it.isNotBlank() } ?: fallbackTitle,
+            author = doc.selectFirst("meta[name=author]")?.attr("content")?.takeIf { it.isNotBlank() },
+            cover = doc.selectFirst("meta[property=og:image]")?.absUrl("content")?.takeIf { it.isNotBlank() },
+            description = doc.selectFirst("meta[name=description]")?.attr("content")?.stripHtml(),
             tracks = tracks,
             newestFirst = false,
         )
+    }
+
+    /**
+     * Поиск адресов аудио в сыром тексте — там, куда DOM не заглядывает.
+     * Внутри скриптов и JSON слэши экранированы: "https:\/\/site.ru\/file.mp3",
+     * и пока их не развернуть, ссылка не распознаётся.
+     */
+    private fun audioUrlsIn(raw: String, baseUrl: String): List<String> {
+        val text = raw
+            .replace("\\/", "/")
+            .replace("\\u002F", "/", ignoreCase = true)
+            .replace("&amp;", "&")
+
+        val hits = mutableListOf<Pair<Int, String>>()
+        ABSOLUTE_AUDIO_PATTERN.findAll(text).forEach { hits += it.range.first to it.value }
+        // Путь от корня берём только в начале строкового литерала, иначе выражение
+        // выхватит хвост уже найденного полного адреса и создаст дубликат.
+        RELATIVE_AUDIO_PATTERN.findAll(text).forEach { match ->
+            match.groupValues.getOrNull(1)?.let { hits += match.range.first to it }
+        }
+
+        return hits.sortedBy { it.first }.map { it.second.absolute(baseUrl) }.distinct()
     }
 
     // ——— Мелочи ———
@@ -342,8 +356,10 @@ object MediaScraper {
     /** Поля-«соседи», которые не являются самим файлом. */
     private val IGNORED_KEYS = setOf("cover", "image", "artwork", "thumbnail", "poster")
 
-    private val LINK_PATTERN =
-        Regex("""(?:href|src|data-src)\s*=\s*["']([^"'\s>]+)["']""", RegexOption.IGNORE_CASE)
+    /** Атрибуты, в которых плееры держат адрес файла. */
+    private val AUDIO_ATTRIBUTES = listOf(
+        "src", "href", "data-src", "data-file", "data-url", "data-track", "data-mp3", "data-audio",
+    )
 
     private const val AUDIO_ALTERNATIVES = "mp3|m4a|m4b|ogg|oga|opus|aac|wav|flac"
 
@@ -362,9 +378,4 @@ object MediaScraper {
         RegexOption.IGNORE_CASE,
     )
 
-    private val TITLE_PATTERN =
-        Regex("""<title[^>]*>(.*?)</title>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
-
-    private val OG_IMAGE_PATTERN =
-        Regex("""<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
 }

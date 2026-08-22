@@ -242,12 +242,36 @@ object MediaScraper {
     // ——— Обычная веб-страница ———
 
     private fun fromHtml(html: String, baseUrl: String, fallbackTitle: String): Found {
-        val links = LINK_PATTERN.findAll(html)
-            .mapNotNull { it.groupValues.getOrNull(1) }
-            .filter { it.looksLikeAudio() }
-            .map { it.absolute(baseUrl) }
+        // Внутри скриптов и JSON слэши экранированы: "https:\/\/site.ru\/file.mp3".
+        // Пока их не развернуть, ссылка не распознаётся ни одним разумным выражением.
+        val text = html
+            .replace("\\/", "/")
+            .replace("\\u002F", "/", ignoreCase = true)
+            .replace("&amp;", "&")
+
+        // Порядок глав задаётся порядком в странице, поэтому запоминаем, где нашли.
+        val hits = mutableListOf<Pair<Int, String>>()
+
+        // 1. Ссылки в атрибутах — самый надёжный случай.
+        LINK_PATTERN.findAll(text).forEach { match ->
+            val value = match.groupValues.getOrNull(1) ?: return@forEach
+            if (value.looksLikeAudio()) hits += match.range.first to value
+        }
+
+        // 2. Полные адреса где угодно в тексте: плееры часто получают файл из
+        //    встроенного скрипта, и в href такая ссылка не попадает вовсе.
+        ABSOLUTE_AUDIO_PATTERN.findAll(text).forEach { hits += it.range.first to it.value }
+
+        // 3. Пути от корня сайта — только в начале строкового литерала, иначе
+        //    выражение цепляло бы хвост уже найденного полного адреса.
+        RELATIVE_AUDIO_PATTERN.findAll(text).forEach { match ->
+            match.groupValues.getOrNull(1)?.let { hits += match.range.first to it }
+        }
+
+        val links = hits
+            .sortedBy { it.first }
+            .map { it.second.absolute(baseUrl) }
             .distinct()
-            .toList()
 
         val tracks = links.mapIndexed { index, url ->
             Track(
@@ -320,6 +344,23 @@ object MediaScraper {
 
     private val LINK_PATTERN =
         Regex("""(?:href|src|data-src)\s*=\s*["']([^"'\s>]+)["']""", RegexOption.IGNORE_CASE)
+
+    private const val AUDIO_ALTERNATIVES = "mp3|m4a|m4b|ogg|oga|opus|aac|wav|flac"
+
+    /** Полный адрес аудиофайла в любом месте страницы, включая тело скрипта. */
+    private val ABSOLUTE_AUDIO_PATTERN = Regex(
+        """https?://[^\s"'<>()\\]+?\.(?:$AUDIO_ALTERNATIVES)(?:\?[^\s"'<>()\\]*)?""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /**
+     * Путь от корня сайта. Требуем кавычку или скобку перед ним: иначе выражение
+     * выхватывало бы хвост уже найденного полного адреса и плодило дубликаты.
+     */
+    private val RELATIVE_AUDIO_PATTERN = Regex(
+        """["'(](/[^\s"'<>()\\]+?\.(?:$AUDIO_ALTERNATIVES)(?:\?[^\s"'<>()\\]*)?)""",
+        RegexOption.IGNORE_CASE,
+    )
 
     private val TITLE_PATTERN =
         Regex("""<title[^>]*>(.*?)</title>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))

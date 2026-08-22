@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -44,6 +45,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.starky.audiokniga.data.model.CustomSource
 import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.data.provider.SourceListFormat
+import ua.starky.audiokniga.data.provider.SourceProbe
 import ua.starky.audiokniga.ui.SectionHeader
 import ua.starky.audiokniga.ui.components.AppIcons
 import ua.starky.audiokniga.ui.components.NeuIconButton
@@ -63,6 +65,8 @@ fun SourcesScreen(
 ) {
     val sources by viewModel.customSources.collectAsStateWithLifecycle()
     val disabled by viewModel.disabledSources.collectAsStateWithLifecycle()
+    val reports by viewModel.reports.collectAsStateWithLifecycle()
+    val probing by viewModel.probing.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val busy by viewModel.busy.collectAsStateWithLifecycle()
     val c = Neu.colors
@@ -139,6 +143,18 @@ fun SourcesScreen(
                 }
             }
 
+            if (sources.isNotEmpty()) {
+                item {
+                    FileButton(
+                        icon = AppIcons.Refresh,
+                        label = "Проверить все источники",
+                        accent = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = viewModel::probeAll,
+                    )
+                }
+            }
+
             item {
                 Text(
                     "Файл может быть OPML из другой читалки, JSON или простой список: " +
@@ -205,6 +221,9 @@ fun SourcesScreen(
                     CustomSourceRow(
                         source = source,
                         busy = busy,
+                        report = reports[source.id],
+                        checking = source.id in probing,
+                        onCheck = { viewModel.probe(source) },
                         onEdit = { editingId = source.id },
                         onToggle = { viewModel.setEnabled(source, !source.enabled) },
                         onOpen = { viewModel.open(source, onOpenBook) },
@@ -516,14 +535,30 @@ private fun EditSourceRow(
             if (url.contains(CustomSource.QUERY_PLACEHOLDER)) {
                 "Участвует в поиске: вместо ${CustomSource.QUERY_PLACEHOLDER} подставится запрос."
             } else {
-                "Без ${CustomSource.QUERY_PLACEHOLDER} источник не ищет, а открывается целиком. " +
-                    "Найдите на сайте страницу поиска и вставьте ${CustomSource.QUERY_PLACEHOLDER} " +
-                    "туда, где в адресе стоит искомое слово."
+                "Без ${CustomSource.QUERY_PLACEHOLDER} источник не ищет. Подставить его наугад нельзя — " +
+                    "у каждого движка свой адрес поиска. Откройте поиск на сайте, посмотрите адрес " +
+                    "в строке браузера и поставьте ${CustomSource.QUERY_PLACEHOLDER} на место запроса. " +
+                    "Ниже — самые частые варианты."
             },
             color = if (url.contains(CustomSource.QUERY_PLACEHOLDER)) c.accent else c.inkFaint,
             fontSize = 11.sp,
             lineHeight = 16.sp,
         )
+
+        if (!url.contains(CustomSource.QUERY_PLACEHOLDER)) {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                items(SourceProbe.SEARCH_PATTERNS) { (label, suffix) ->
+                    Row(
+                        Modifier
+                            .neuRaised(RoundedCornerShape(percent = 50), elevation = 3.dp)
+                            .clickable { url = url.trimEnd('/') + "/" + suffix }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Text(label, color = c.inkMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(
                 Modifier
@@ -560,6 +595,9 @@ private fun EditSourceRow(
 private fun CustomSourceRow(
     source: CustomSource,
     busy: Boolean,
+    report: SourceProbe.Report?,
+    checking: Boolean,
+    onCheck: () -> Unit,
     onEdit: () -> Unit,
     onToggle: () -> Unit,
     onOpen: () -> Unit,
@@ -597,6 +635,14 @@ private fun CustomSourceRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (report != null) {
+                Text(
+                    report.text,
+                    color = if (report.ok) c.accent else c.offline,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                )
+            }
             Text(
                 when {
                     !source.enabled -> "Выключен — в поиске не участвует"
@@ -611,6 +657,21 @@ private fun CustomSourceRow(
                 fontSize = 9.5.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.7.sp,
+            )
+        }
+        if (checking) {
+            androidx.compose.material3.CircularProgressIndicator(
+                color = c.accent,
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(16.dp),
+            )
+        } else {
+            NeuIconButton(
+                icon = AppIcons.Refresh,
+                contentDescription = "Проверить источник",
+                onClick = onCheck,
+                size = 34.dp,
+                iconSize = 12.dp,
             )
         }
         if (!source.isSearchTemplate) {

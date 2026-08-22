@@ -15,6 +15,7 @@ import kotlinx.coroutines.launch
 import ua.starky.audiokniga.app
 import ua.starky.audiokniga.data.model.CustomSource
 import ua.starky.audiokniga.data.provider.SourceListFormat
+import ua.starky.audiokniga.data.provider.SourceProbe
 import ua.starky.audiokniga.settings.SettingsStore
 
 /** Общая модель для «Источников» и «Настроек»: и то и другое — про подготовку приложения. */
@@ -47,6 +48,35 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val _busy = MutableStateFlow(false)
     val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
+    /** Результаты проверки источников: id → что нашлось по адресу. */
+    private val _reports = MutableStateFlow<Map<String, SourceProbe.Report>>(emptyMap())
+    val reports: StateFlow<Map<String, SourceProbe.Report>> = _reports.asStateFlow()
+
+    private val _probing = MutableStateFlow<Set<String>>(emptySet())
+    val probing: StateFlow<Set<String>> = _probing.asStateFlow()
+
+    /** Сходить по адресу и рассказать, что там на самом деле. */
+    fun probe(source: CustomSource) {
+        if (source.id in _probing.value) return
+        viewModelScope.launch {
+            _probing.value = _probing.value + source.id
+            val report = SourceProbe.probe(source)
+            _reports.value = _reports.value + (source.id to report)
+            _probing.value = _probing.value - source.id
+        }
+    }
+
+    /** Проверить все источники разом — руками это двадцать нажатий. */
+    fun probeAll() {
+        val sources = customSources.value
+        if (sources.isEmpty()) {
+            _message.value = "Своих источников пока нет"
+            return
+        }
+        sources.forEach { probe(it) }
+        _message.value = "Проверяю ${sources.size} ${sourceWord(sources.size)}"
+    }
 
     fun setThemeMode(mode: Int) = viewModelScope.launch { settings.setThemeMode(mode) }
 

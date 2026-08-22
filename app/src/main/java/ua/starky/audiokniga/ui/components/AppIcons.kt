@@ -174,4 +174,45 @@ object AppIcons {
         moveTo(11.5f, 6f); horizontalLineTo(16f); verticalLineTo(20f); horizontalLineTo(11.5f); close()
         moveTo(17.5f, 7.5f); lineTo(21f, 8.4f); lineTo(18.4f, 20f); lineTo(15.6f, 19.3f)
     }
+
+    /** Звезда-контур: книга не в избранном. */
+    val Star: ImageVector = stroked("Star") {
+        moveTo(12f, 3.6f)
+        lineTo(14.6f, 9f)
+        lineTo(20.4f, 9.8f)
+        lineTo(16.2f, 13.9f)
+        lineTo(17.2f, 19.7f)
+        lineTo(12f, 17f)
+        lineTo(6.8f, 19.7f)
+        lineTo(7.8f, 13.9f)
+        lineTo(3.6f, 9.8f)
+        lineTo(9.4f, 9f)
+        close()
+    }
+
+    /** Та же звезда, залитая: в избранном. */
+    val StarFilled: ImageVector = filled("StarFilled") {
+        moveTo(12f, 3.6f)
+        lineTo(14.6f, 9f)
+        lineTo(20.4f, 9.8f)
+        lineTo(16.2f, 13.9f)
+        lineTo(17.2f, 19.7f)
+        lineTo(12f, 17f)
+        lineTo(6.8f, 19.7f)
+        lineTo(7.8f, 13.9f)
+        lineTo(3.6f, 9.8f)
+        lineTo(9.4f, 9f)
+        close()
+    }
+
+    /** Список воспроизведения. */
+    val Playlist: ImageVector = stroked("Playlist") {
+        moveTo(4f, 7f); horizontalLineTo(16f)
+        moveTo(4f, 12f); horizontalLineTo(13f)
+        moveTo(4f, 17f); horizontalLineTo(10f)
+        moveTo(17f, 19f)
+        arcToRelative(2f, 2f, 0f, true, true, 0f, -4f)
+        arcToRelative(2f, 2f, 0f, true, true, 0f, 4f)
+        moveTo(19f, 17f); verticalLineTo(9.5f); lineTo(21.5f, 10.5f)
+    }
 }

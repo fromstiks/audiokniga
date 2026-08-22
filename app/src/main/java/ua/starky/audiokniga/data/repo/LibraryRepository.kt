@@ -21,7 +21,10 @@ import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.SearchResult
 import ua.starky.audiokniga.data.model.SourceMode
 import ua.starky.audiokniga.data.db.CustomSourceEntity
+import ua.starky.audiokniga.data.db.PlaylistBookEntity
+import ua.starky.audiokniga.data.db.PlaylistEntity
 import ua.starky.audiokniga.data.model.CustomSource
+import ua.starky.audiokniga.data.model.Playlist
 import ua.starky.audiokniga.data.provider.CustomProvider
 import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.data.provider.RssProvider
@@ -54,6 +57,7 @@ class LibraryRepository(context: Context) {
     private val books = db.bookDao()
     private val chapters = db.chapterDao()
     private val customSources = db.customSourceDao()
+    private val playlists = db.playlistDao()
 
     fun observeLibrary(): Flow<List<Book>> = books.observeLibrary().map { list -> list.map { it.toBook() } }
 
@@ -151,6 +155,8 @@ class LibraryRepository(context: Context) {
                 lastOpenedAt = now,
                 lastChapterIndex = existing?.lastChapterIndex ?: 0,
                 lastPositionMs = existing?.lastPositionMs ?: 0L,
+                // Повторное открытие книги не должно снимать звёздочку.
+                favorite = existing?.favorite ?: false,
             )
         )
         chapters.replaceForBook(
@@ -191,7 +197,52 @@ class LibraryRepository(context: Context) {
 
     suspend fun remove(bookId: String) = withContext(Dispatchers.IO) {
         chapters.deleteForBook(bookId)
+        playlists.removeBookEverywhere(bookId)
         books.delete(bookId)
+    }
+
+    // ——— Избранное и списки ———
+
+    suspend fun setFavorite(bookId: String, favorite: Boolean) = books.setFavorite(bookId, favorite)
+
+    fun observePlaylists(): Flow<List<Playlist>> = playlists.observeAll().map { list ->
+        list.map { Playlist(id = it.id, name = it.name, bookCount = it.bookCount) }
+    }
+
+    /** Все связки разом: библиотека невелика, а так экран получает всё одним потоком. */
+    fun observePlaylistMembership(): Flow<Map<String, Set<String>>> =
+        playlists.observeMemberships().map { rows ->
+            rows.groupBy { it.playlistId }
+                .mapValues { (_, links) -> links.map { it.bookId }.toSet() }
+        }
+
+    suspend fun createPlaylist(name: String): Playlist = withContext(Dispatchers.IO) {
+        val playlist = Playlist(
+            id = UUID.randomUUID().toString(),
+            name = name.trim().ifBlank { "Новый список" },
+            bookCount = 0,
+        )
+        playlists.upsert(
+            PlaylistEntity(id = playlist.id, name = playlist.name, createdAt = System.currentTimeMillis())
+        )
+        playlist
+    }
+
+    suspend fun renamePlaylist(playlistId: String, name: String) {
+        val trimmed = name.trim()
+        if (trimmed.isNotEmpty()) playlists.rename(playlistId, trimmed)
+    }
+
+    suspend fun deletePlaylist(playlistId: String) = playlists.deletePlaylist(playlistId)
+
+    suspend fun setInPlaylist(playlistId: String, bookId: String, inList: Boolean) {
+        if (inList) {
+            playlists.addBook(
+                PlaylistBookEntity(playlistId = playlistId, bookId = bookId, addedAt = System.currentTimeMillis())
+            )
+        } else {
+            playlists.removeBook(playlistId, bookId)
+        }
     }
 
     // ——— Свои источники ———
@@ -250,6 +301,7 @@ class LibraryRepository(context: Context) {
         durationMs = durationMs,
         language = language,
         sourceUrl = sourceUrl,
+        favorite = favorite,
     )
 
     private fun ChapterEntity.toChapter() = Chapter(

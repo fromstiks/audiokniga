@@ -8,14 +8,21 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
-    entities = [BookEntity::class, ChapterEntity::class, CustomSourceEntity::class],
-    version = 2,
+    entities = [
+        BookEntity::class,
+        ChapterEntity::class,
+        CustomSourceEntity::class,
+        PlaylistEntity::class,
+        PlaylistBookEntity::class,
+    ],
+    version = 3,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun chapterDao(): ChapterDao
     abstract fun customSourceDao(): CustomSourceDao
+    abstract fun playlistDao(): PlaylistDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -35,13 +42,38 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Избранное и списки. Библиотеку при этом тоже терять незачем. */
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `books` ADD COLUMN `favorite` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `playlists` (" +
+                        "`id` TEXT NOT NULL, " +
+                        "`name` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`id`))"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `playlist_books` (" +
+                        "`playlistId` TEXT NOT NULL, " +
+                        "`bookId` TEXT NOT NULL, " +
+                        "`addedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`playlistId`, `bookId`))"
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_playlist_books_bookId` " +
+                        "ON `playlist_books` (`bookId`)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "audiokniga.db",
             )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 .also { instance = it }
         }

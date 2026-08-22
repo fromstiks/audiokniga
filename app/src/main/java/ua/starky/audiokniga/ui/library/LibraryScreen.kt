@@ -16,20 +16,33 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ua.starky.audiokniga.data.model.Book
+import ua.starky.audiokniga.data.model.Playlist
+import ua.starky.audiokniga.data.model.ShelfFilter
 import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.ui.SectionHeader
 import ua.starky.audiokniga.ui.components.AppIcons
@@ -38,6 +51,7 @@ import ua.starky.audiokniga.ui.components.MiniPlayer
 import ua.starky.audiokniga.ui.components.NeuIconButton
 import ua.starky.audiokniga.ui.theme.Neu
 import ua.starky.audiokniga.ui.theme.neuRaised
+import ua.starky.audiokniga.ui.theme.neuSunken
 
 @Composable
 fun LibraryScreen(
@@ -47,10 +61,16 @@ fun LibraryScreen(
     onOpenBook: (String) -> Unit,
 ) {
     val books by viewModel.books.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    val filter by viewModel.filter.collectAsStateWithLifecycle()
+    val favorites by viewModel.favoriteCount.collectAsStateWithLifecycle()
     val playback by viewModel.playbackState.collectAsStateWithLifecycle()
     val current by viewModel.currentBook.collectAsStateWithLifecycle()
     val skipSeconds by viewModel.skipSeconds.collectAsStateWithLifecycle()
     val c = Neu.colors
+
+    var creating by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
 
     Column(
         Modifier
@@ -61,7 +81,7 @@ fun LibraryScreen(
             .padding(horizontal = 18.dp),
     ) {
         SectionHeader(
-            title = "Моя полка",
+            title = filter.title(playlists),
             subtitle = if (books.isEmpty()) "Пока пусто" else "${books.size} ${plural(books.size)}",
             onOpenDrawer = onOpenDrawer,
             action = {
@@ -69,24 +89,52 @@ fun LibraryScreen(
             },
         )
 
+        FilterStrip(
+            filter = filter,
+            playlists = playlists,
+            favorites = favorites,
+            onSelect = viewModel::setFilter,
+            onCreate = { creating = true; newName = "" },
+        )
+
+        if (creating) {
+            Spacer(Modifier.height(10.dp))
+            NewPlaylistField(
+                name = newName,
+                onChange = { newName = it },
+                onDone = {
+                    viewModel.createPlaylist(newName)
+                    creating = false; newName = ""
+                },
+                onCancel = { creating = false; newName = "" },
+            )
+        }
+
+        Spacer(Modifier.height(14.dp))
+
         Box(Modifier.weight(1f)) {
-            if (books.isEmpty()) {
-                EmptyShelf(onOpenSearch = onOpenSearch)
-            } else {
-                LazyColumn(
+            when {
+                books.isEmpty() && filter is ShelfFilter.All -> EmptyShelf(onOpenSearch = onOpenSearch)
+
+                books.isEmpty() -> EmptyFilter(filter = filter, onShowAll = { viewModel.setFilter(ShelfFilter.All) })
+
+                else -> LazyColumn(
                     Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(11.dp),
                     contentPadding = PaddingValues(bottom = 12.dp),
                 ) {
                     items(books, key = { it.id }) { book ->
                         BookRow(
-                            title = book.title,
-                            author = book.author,
-                            coverUrl = book.coverUrl,
+                            book = book,
                             source = ProviderRegistry.displayName(book.providerId),
                             playing = playback.isPlaying && playback.bookId == book.id,
+                            inPlaylist = filter is ShelfFilter.InPlaylist,
                             onOpen = { onOpenBook(book.id) },
-                            onRemove = { viewModel.remove(book.id) },
+                            onToggleFavorite = { viewModel.toggleFavorite(book) },
+                            onRemove = {
+                                if (filter is ShelfFilter.InPlaylist) viewModel.removeFromCurrentPlaylist(book)
+                                else viewModel.remove(book.id)
+                            },
                         )
                     }
                 }
@@ -110,21 +158,156 @@ fun LibraryScreen(
     }
 }
 
+/** Полоса «Все · Избранное · списки · +». Прокручивается, списков может быть много. */
+@Composable
+private fun FilterStrip(
+    filter: ShelfFilter,
+    playlists: List<Playlist>,
+    favorites: Int,
+    onSelect: (ShelfFilter) -> Unit,
+    onCreate: () -> Unit,
+) {
+    val c = Neu.colors
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        item {
+            Chip(
+                label = "Все",
+                selected = filter is ShelfFilter.All,
+                onClick = { onSelect(ShelfFilter.All) },
+            )
+        }
+        item {
+            Chip(
+                label = "Избранное",
+                count = favorites,
+                icon = AppIcons.StarFilled,
+                accent = c.offline,
+                selected = filter is ShelfFilter.Favorites,
+                onClick = { onSelect(ShelfFilter.Favorites) },
+            )
+        }
+        items(playlists, key = { it.id }) { playlist ->
+            Chip(
+                label = playlist.name,
+                count = playlist.bookCount,
+                icon = AppIcons.Playlist,
+                selected = (filter as? ShelfFilter.InPlaylist)?.playlistId == playlist.id,
+                onClick = { onSelect(ShelfFilter.InPlaylist(playlist.id)) },
+            )
+        }
+        item {
+            Chip(label = "Новый список", icon = AppIcons.Plus, selected = false, onClick = onCreate)
+        }
+    }
+}
+
+@Composable
+private fun Chip(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    count: Int? = null,
+    icon: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    accent: androidx.compose.ui.graphics.Color? = null,
+) {
+    val c = Neu.colors
+    val shape = RoundedCornerShape(percent = 50)
+    val tint = accent ?: c.accent
+    Row(
+        Modifier
+            .then(
+                if (selected) Modifier.neuSunken(shape, depth = 3.dp)
+                else Modifier.neuRaised(shape, elevation = 4.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (icon != null) {
+            Icon(
+                icon,
+                null,
+                tint = if (selected) tint else c.inkFaint,
+                modifier = Modifier.size(12.dp),
+            )
+        }
+        Text(
+            label,
+            color = if (selected) c.ink else c.inkMuted,
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (count != null && count > 0) {
+            Text(
+                count.toString(),
+                color = if (selected) tint else c.inkFaint,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun NewPlaylistField(
+    name: String,
+    onChange: (String) -> Unit,
+    onDone: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    val c = Neu.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .neuSunken(RoundedCornerShape(15.dp), depth = 3.dp)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(AppIcons.Playlist, null, tint = c.accent, modifier = Modifier.size(15.dp))
+        Box(Modifier.weight(1f)) {
+            if (name.isEmpty()) {
+                Text("Название списка", color = c.inkFaint, fontSize = 13.sp)
+            }
+            BasicTextField(
+                value = name,
+                onValueChange = onChange,
+                singleLine = true,
+                textStyle = LocalTextStyle.current.copy(color = c.ink, fontSize = 13.sp),
+                cursorBrush = SolidColor(c.accent),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = { onDone() }),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        Icon(
+            AppIcons.Check,
+            "Создать список",
+            tint = if (name.isBlank()) c.inkFaint else c.accent,
+            modifier = Modifier.size(16.dp).clickable(enabled = name.isNotBlank(), onClick = onDone),
+        )
+        Icon(
+            AppIcons.Close,
+            "Отменить",
+            tint = c.inkFaint,
+            modifier = Modifier.size(15.dp).clickable(onClick = onCancel),
+        )
+    }
+}
+
 @Composable
 private fun EmptyShelf(onOpenSearch: () -> Unit) {
     val c = Neu.colors
     Column(
-        Modifier.fillMaxSize().padding(top = 40.dp),
+        Modifier.fillMaxSize().padding(top = 24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        Text("На полке пока пусто", color = c.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Text(
-            "На полке пока пусто",
-            color = c.ink,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-        Text(
-            "Найдите книгу в открытых каталогах — LibriVox, Internet Archive, подкасты. " +
+            "Найдите книгу в открытых каталогах — Internet Archive, LibriVox, подкасты. " +
                 "Скачанные главы останутся на устройстве: их можно слушать без сети, " +
                 "переключив источник на «Офлайн».",
             color = c.inkMuted,
@@ -146,13 +329,54 @@ private fun EmptyShelf(onOpenSearch: () -> Unit) {
 }
 
 @Composable
+private fun EmptyFilter(filter: ShelfFilter, onShowAll: () -> Unit) {
+    val c = Neu.colors
+    Column(
+        Modifier.fillMaxSize().padding(top = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Text(
+            when (filter) {
+                is ShelfFilter.Favorites -> "В избранном пусто"
+                else -> "В этом списке пусто"
+            },
+            color = c.ink,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            when (filter) {
+                is ShelfFilter.Favorites ->
+                    "Нажмите звёздочку на карточке книги — она появится здесь."
+                else ->
+                    "Откройте книгу и добавьте её в список кнопкой со списком в шапке плеера."
+            },
+            color = c.inkMuted,
+            fontSize = 13.sp,
+            lineHeight = 20.sp,
+        )
+        Row(
+            Modifier
+                .neuRaised(RoundedCornerShape(16.dp), elevation = 5.dp)
+                .clickable(onClick = onShowAll)
+                .padding(horizontal = 16.dp, vertical = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+        ) {
+            Icon(AppIcons.Shelf, null, tint = c.accent, modifier = Modifier.size(15.dp))
+            Text("Показать всю полку", color = c.ink, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
 private fun BookRow(
-    title: String,
-    author: String,
-    coverUrl: String?,
+    book: Book,
     source: String,
     playing: Boolean,
+    inPlaylist: Boolean,
     onOpen: () -> Unit,
+    onToggleFavorite: () -> Unit,
     onRemove: () -> Unit,
 ) {
     val c = Neu.colors
@@ -166,21 +390,21 @@ private fun BookRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         BookCover(
-            title = title,
-            coverUrl = coverUrl,
+            title = book.title,
+            coverUrl = book.coverUrl,
             modifier = Modifier.size(62.dp).clip(RoundedCornerShape(16.dp)),
             fontSize = 7,
         )
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                title,
+                book.title,
                 color = c.ink,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(author, color = c.inkMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(book.author, color = c.inkMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
                 if (playing) "Играет · $source" else source,
                 color = if (playing) c.accent else c.inkFaint,
@@ -189,13 +413,30 @@ private fun BookRow(
                 letterSpacing = 0.9.sp,
             )
         }
-        Icon(
-            AppIcons.Trash,
-            "Убрать из библиотеки",
-            tint = c.inkFaint,
-            modifier = Modifier.size(17.dp).clickable(onClick = onRemove),
-        )
+        Column(
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                imageVector = if (book.favorite) AppIcons.StarFilled else AppIcons.Star,
+                contentDescription = if (book.favorite) "Убрать из избранного" else "В избранное",
+                tint = if (book.favorite) c.offline else c.inkFaint,
+                modifier = Modifier.size(17.dp).clickable(onClick = onToggleFavorite),
+            )
+            Icon(
+                imageVector = if (inPlaylist) AppIcons.Close else AppIcons.Trash,
+                contentDescription = if (inPlaylist) "Убрать из списка" else "Убрать из библиотеки",
+                tint = c.inkFaint,
+                modifier = Modifier.size(16.dp).clickable(onClick = onRemove),
+            )
+        }
     }
+}
+
+private fun ShelfFilter.title(playlists: List<Playlist>): String = when (this) {
+    is ShelfFilter.All -> "Моя полка"
+    is ShelfFilter.Favorites -> "Избранное"
+    is ShelfFilter.InPlaylist -> playlists.firstOrNull { it.id == playlistId }?.name ?: "Список"
 }
 
 private fun plural(count: Int): String {

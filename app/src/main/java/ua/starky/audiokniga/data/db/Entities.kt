@@ -22,6 +22,7 @@ data class BookEntity(
     /** Индекс главы, на которой остановились. */
     val lastChapterIndex: Int,
     val lastPositionMs: Long,
+    val favorite: Boolean = false,
 )
 
 @Entity(
@@ -46,5 +47,24 @@ data class CustomSourceEntity(
     val name: String,
     val url: String,
     val enabled: Boolean,
+    val addedAt: Long,
+)
+
+@Entity(tableName = "playlists")
+data class PlaylistEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val createdAt: Long,
+)
+
+/** Связка «книга в списке». Порядок задаётся временем добавления. */
+@Entity(
+    tableName = "playlist_books",
+    primaryKeys = ["playlistId", "bookId"],
+    indices = [Index("bookId")],
+)
+data class PlaylistBookEntity(
+    val playlistId: String,
+    val bookId: String,
     val addedAt: Long,
 )

@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,11 +24,21 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,7 +71,9 @@ fun PlayerScreen(
     onBack: () -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val picker by viewModel.playlistPicker.collectAsStateWithLifecycle()
     val c = Neu.colors
+    var pickerOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.message) {
         if (state.message != null) {
@@ -79,30 +92,38 @@ fun PlayerScreen(
         Row(
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            NeuIconButton(AppIcons.Back, "Назад", onBack, size = 38.dp, iconSize = 15.dp)
-            Text(
-                text = state.book?.let { ProviderRegistry.displayName(it.providerId) }.orEmpty(),
-                color = c.inkFaint,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp,
-                modifier = Modifier.weight(1f),
+            NeuIconButton(AppIcons.Back, "Назад", onBack, size = 36.dp, iconSize = 14.dp)
+            Spacer(Modifier.weight(1f))
+            NeuIconButton(
+                icon = if (state.book?.favorite == true) AppIcons.StarFilled else AppIcons.Star,
+                contentDescription = if (state.book?.favorite == true) "Убрать из избранного" else "В избранное",
+                onClick = viewModel::toggleFavorite,
+                size = 36.dp,
+                iconSize = 15.dp,
+                tint = if (state.book?.favorite == true) c.offline else null,
+            )
+            NeuIconButton(
+                icon = AppIcons.Playlist,
+                contentDescription = "Добавить в список",
+                onClick = { pickerOpen = true },
+                size = 36.dp,
+                iconSize = 15.dp,
+                tint = if (picker.selected.isNotEmpty()) c.accent else null,
             )
             NeuTextButton(
                 text = formatSpeed(state.playback.speed),
                 onClick = viewModel::cycleSpeed,
-                size = 38.dp,
+                size = 36.dp,
                 tint = if (state.playback.speed > 1.01f) c.accent else null,
             )
-            Spacer(Modifier.size(2.dp))
             NeuIconButton(
                 AppIcons.Download,
                 "Скачать все главы",
                 viewModel::downloadAll,
-                size = 38.dp,
-                iconSize = 15.dp,
+                size = 36.dp,
+                iconSize = 14.dp,
             )
         }
 
@@ -149,6 +170,13 @@ fun PlayerScreen(
                     color = c.inkMuted,
                     fontSize = 12.5.sp,
                     fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = state.book?.let { ProviderRegistry.displayName(it.providerId) }.orEmpty(),
+                    color = c.inkFaint,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.1.sp,
                 )
                 Text(
                     text = downloadedLabel(state.downloadedCount, state.chapters.size),
@@ -249,6 +277,139 @@ fun PlayerScreen(
                     .padding(horizontal = 14.dp, vertical = 11.dp)
             ) {
                 Text(text, color = c.inkMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+
+    if (pickerOpen) {
+        PlaylistDialog(
+            picker = picker,
+            onToggle = viewModel::setInPlaylist,
+            onCreate = viewModel::createPlaylistWithBook,
+            onDismiss = { pickerOpen = false },
+        )
+    }
+}
+
+/**
+ * Окно «в какие списки положить книгу». Отмечать можно сразу несколько,
+ * тут же создаётся новый список.
+ */
+@Composable
+private fun PlaylistDialog(
+    picker: PlaylistPicker,
+    onToggle: (String, Boolean) -> Unit,
+    onCreate: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = Neu.colors
+    var newName by remember { mutableStateOf("") }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .neuRaised(RoundedCornerShape(24.dp), elevation = 8.dp)
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("В список", color = c.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+
+            if (picker.playlists.isEmpty()) {
+                Text(
+                    "Списков пока нет. Придумайте название — книга сразу попадёт в новый список.",
+                    color = c.inkMuted,
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp,
+                )
+            } else {
+                LazyColumn(
+                    Modifier.heightIn(max = 260.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    items(picker.playlists, key = { it.id }) { playlist ->
+                        val checked = playlist.id in picker.selected
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (checked) Modifier.neuSunken(RoundedCornerShape(13.dp), depth = 2.5.dp)
+                                    else Modifier.neuRaised(RoundedCornerShape(13.dp), elevation = 3.dp)
+                                )
+                                .clickable { onToggle(playlist.id, !checked) }
+                                .padding(horizontal = 12.dp, vertical = 11.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (checked) AppIcons.Check else AppIcons.Playlist,
+                                contentDescription = null,
+                                tint = if (checked) c.accent else c.inkFaint,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Text(
+                                playlist.name,
+                                color = if (checked) c.ink else c.inkMuted,
+                                fontSize = 13.sp,
+                                fontWeight = if (checked) FontWeight.Bold else FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                playlist.bookCount.toString(),
+                                color = c.inkFaint,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                            )
+                        }
+                    }
+                }
+            }
+
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .neuSunken(RoundedCornerShape(14.dp), depth = 3.dp)
+                    .padding(horizontal = 13.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Box(Modifier.weight(1f)) {
+                    if (newName.isEmpty()) {
+                        Text("Новый список", color = c.inkFaint, fontSize = 12.5.sp)
+                    }
+                    BasicTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(color = c.ink, fontSize = 12.5.sp),
+                        cursorBrush = SolidColor(c.accent),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(
+                            onDone = { if (newName.isNotBlank()) { onCreate(newName); newName = "" } },
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Icon(
+                    AppIcons.Plus,
+                    "Создать список",
+                    tint = if (newName.isBlank()) c.inkFaint else c.accent,
+                    modifier = Modifier
+                        .size(15.dp)
+                        .clickable(enabled = newName.isNotBlank()) { onCreate(newName); newName = "" },
+                )
+            }
+
+            Row(
+                Modifier
+                    .align(Alignment.End)
+                    .neuRaised(RoundedCornerShape(14.dp), elevation = 4.dp)
+                    .clickable(onClick = onDismiss)
+                    .padding(horizontal = 18.dp, vertical = 10.dp),
+            ) {
+                Text("Готово", color = c.ink, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
             }
         }
     }

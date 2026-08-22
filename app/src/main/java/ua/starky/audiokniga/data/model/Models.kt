@@ -29,6 +29,7 @@ data class Book(
     val durationMs: Long = 0L,
     val language: String? = null,
     val sourceUrl: String? = null,
+    val favorite: Boolean = false,
 )
 
 /** Глава = один аудиофайл. */
@@ -115,4 +116,18 @@ data class CustomSource(
                 .distinctBy { it.second }
                 .toList()
     }
+}
+
+/** Пользовательский список книг. */
+data class Playlist(
+    val id: String,
+    val name: String,
+    val bookCount: Int,
+)
+
+/** Что показывать на полке. */
+sealed interface ShelfFilter {
+    data object All : ShelfFilter
+    data object Favorites : ShelfFilter
+    data class InPlaylist(val playlistId: String) : ShelfFilter
 }

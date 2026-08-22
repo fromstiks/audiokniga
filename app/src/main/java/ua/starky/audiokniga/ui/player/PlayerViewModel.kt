@@ -14,6 +14,7 @@ import ua.starky.audiokniga.data.model.Book
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.ChapterUi
 import ua.starky.audiokniga.data.model.DownloadState
+import ua.starky.audiokniga.data.model.Playlist
 import ua.starky.audiokniga.data.model.SourceMode
 import ua.starky.audiokniga.download.DownloadInfo
 import ua.starky.audiokniga.playback.PlaybackState
@@ -32,6 +33,12 @@ data class PlayerUiState(
     /** Книга не открылась совсем — экран должен объяснить, почему, а не остаться пустым. */
     val failure: String? = null,
     val message: String? = null,
+)
+
+/** Что показывать в окне «в список»: сами списки и те, где книга уже есть. */
+data class PlaylistPicker(
+    val playlists: List<Playlist> = emptyList(),
+    val selected: Set<String> = emptySet(),
 )
 
 class PlayerViewModel(application: Application, private val bookId: String) : AndroidViewModel(application) {
@@ -84,11 +91,46 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
         val skipSeconds: Int,
     )
 
+    /**
+     * Списки держим отдельным потоком, а не внутри PlayerUiState: окно выбора
+     * открывается редко, и незачем пересобирать весь экран на каждое изменение.
+     */
+    val playlistPicker: StateFlow<PlaylistPicker> = combine(
+        repo.observePlaylists(),
+        repo.observePlaylistMembership(),
+    ) { lists, membership ->
+        PlaylistPicker(
+            playlists = lists,
+            selected = membership.filterValues { bookId in it }.keys,
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaylistPicker())
+
     init {
         viewModelScope.launch {
             downloads.observe().collect { downloadInfo.value = it }
         }
         load()
+    }
+
+    fun toggleFavorite() {
+        val book = state.value.book ?: return
+        viewModelScope.launch {
+            repo.setFavorite(bookId, !book.favorite)
+            message.value = if (book.favorite) "Убрано из избранного" else "Добавлено в избранное"
+        }
+    }
+
+    fun setInPlaylist(playlistId: String, inList: Boolean) {
+        viewModelScope.launch { repo.setInPlaylist(playlistId, bookId, inList) }
+    }
+
+    /** Создаёт список и сразу кладёт в него текущую книгу — иначе это два действия подряд. */
+    fun createPlaylistWithBook(name: String) {
+        viewModelScope.launch {
+            val playlist = repo.createPlaylist(name)
+            repo.setInPlaylist(playlist.id, bookId, inList = true)
+            message.value = "Список «${playlist.name}» создан"
+        }
     }
 
     private fun load() {

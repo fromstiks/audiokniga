@@ -12,6 +12,7 @@ class RssProvider : AudiobookProvider {
 
     override val id: String = ID
     override val displayName: String = "Ссылка на ленту"
+    override val shortName: String = "Лента"
 
     override suspend fun search(query: String, page: Int): List<SearchResult> {
         val url = query.trim()

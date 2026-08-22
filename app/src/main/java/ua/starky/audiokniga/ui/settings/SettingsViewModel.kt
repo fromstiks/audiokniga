@@ -88,6 +88,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun updateSource(source: CustomSource, name: String, url: String) {
+        val address = url.trim()
+        if (!address.startsWith("http", ignoreCase = true)) {
+            _message.value = "Адрес должен начинаться с http:// или https://"
+            return
+        }
+        viewModelScope.launch {
+            repo.updateCustomSource(source.id, name, address)
+            _message.value = if (address.contains(CustomSource.QUERY_PLACEHOLDER)) {
+                "Источник сохранён и участвует в поиске"
+            } else {
+                "Источник сохранён. Без {q} в адресе он не ищет, а открывается целиком"
+            }
+        }
+    }
+
     fun setEnabled(source: CustomSource, enabled: Boolean) =
         viewModelScope.launch { repo.setCustomSourceEnabled(source.id, enabled) }
 

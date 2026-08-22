@@ -14,18 +14,19 @@ class CustomProvider(val source: CustomSource) : AudiobookProvider {
 
     override val id: String = providerIdFor(source.id)
     override val displayName: String = source.name
+    override val shortName: String = source.name.take(12)
 
+    /**
+     * Искать источник умеет, только если в адресе есть подстановка `{q}` — иначе непонятно,
+     * куда девать запрос. Без неё говорим об этом прямо: раньше мы всё равно лезли по
+     * адресу, не находили там аудио и жаловались на «нет аудиофайлов», хотя дело не в этом.
+     */
     override suspend fun search(query: String, page: Int): List<SearchResult> {
         val q = query.trim()
         if (q.isEmpty()) return emptyList()
+        if (!source.isSearchTemplate) throw ProviderException(NEEDS_PLACEHOLDER)
 
-        val target = source.urlFor(q)
-        val details = load(target)
-
-        // Лента без подстановки {q} — это не поиск, а одна конкретная книга.
-        // Показываем её, только если запрос действительно про неё.
-        if (!source.isSearchTemplate && !details.book.matches(q)) return emptyList()
-
+        val details = load(source.urlFor(q))
         return listOf(SearchResult(details.book, details.chapters.size))
     }
 
@@ -44,10 +45,11 @@ class CustomProvider(val source: CustomSource) : AudiobookProvider {
         )
     }
 
-    private fun ua.starky.audiokniga.data.model.Book.matches(query: String): Boolean =
-        title.contains(query, ignoreCase = true) || author.contains(query, ignoreCase = true)
-
     companion object {
+        /** Текст должен объяснять, что чинить, а не только что сломалось. */
+        const val NEEDS_PLACEHOLDER =
+            "не участвует в поиске: добавьте {q} в адрес там, где сайт ждёт запрос"
+
         private const val PREFIX = "custom-"
 
         /** Идентификатор провайдера попадает в id книги, поэтому двоеточий в нём быть не должно. */

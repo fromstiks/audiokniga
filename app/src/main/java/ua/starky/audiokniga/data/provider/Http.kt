@@ -70,9 +70,13 @@ object Http {
         val reason = e.message.orEmpty()
         return when {
             reason.contains("Unable to resolve host", true) ||
-                e is java.net.UnknownHostException -> "не отвечает$where — проверьте интернет"
+                e is java.net.UnknownHostException ->
+                "— такого адреса нет или он не резолвится$where"
             e is java.net.SocketTimeoutException -> "не ответил вовремя$where"
+            e is java.net.ConnectException -> "не принимает соединение$where"
             reason.contains("CLEARTEXT", true) -> "требует обычный http, а он запрещён системой"
+            reason.contains("SSL", true) || reason.contains("certificate", true) ->
+                "не прошёл проверку сертификата$where"
             else -> "недоступен$where: ${reason.take(120)}"
         }
     }

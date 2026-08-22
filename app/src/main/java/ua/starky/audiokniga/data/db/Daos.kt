@@ -69,6 +69,9 @@ interface CustomSourceDao {
     @Query("UPDATE custom_sources SET enabled = :enabled WHERE id = :id")
     suspend fun setEnabled(id: String, enabled: Boolean)
 
+    @Query("UPDATE custom_sources SET name = :name, url = :url WHERE id = :id")
+    suspend fun update(id: String, name: String, url: String)
+
     @Query("DELETE FROM custom_sources WHERE id = :id")
     suspend fun delete(id: String)
 }

@@ -12,20 +12,34 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import ua.starky.audiokniga.app
 import ua.starky.audiokniga.data.model.SearchResult
+import ua.starky.audiokniga.data.repo.SourceOutcome
 
 data class SearchUiState(
     val query: String = "",
-    val results: List<SearchResult> = emptyList(),
+    /** Ответ каждого источника отдельно — по нему рисуются вкладки. */
+    val sources: List<SourceOutcome> = emptyList(),
+    /** null — вкладка «Все», иначе id источника. */
+    val selectedSource: String? = null,
     val loading: Boolean = false,
     val error: String? = null,
-    /** Источники, которые не ответили. Показываются рядом с результатами, а не вместо них. */
-    val problems: List<String> = emptyList(),
-    /** Сколько источников уже ответило и сколько всего опрошено. */
     val answered: Int = 0,
     val askedSources: Int = 0,
     val searched: Boolean = false,
     val opening: Boolean = false,
-)
+) {
+    /** Что показывать в списке с учётом выбранной вкладки. */
+    val visibleResults: List<SearchResult>
+        get() = selectedSource
+            ?.let { id -> sources.firstOrNull { it.providerId == id }?.results.orEmpty() }
+            ?: sources.flatMap { it.results }.distinctBy { it.book.id }
+
+    /** Ошибка выбранного источника — на вкладке она важнее общего списка проблем. */
+    val selectedProblem: String?
+        get() = selectedSource?.let { id -> sources.firstOrNull { it.providerId == id }?.problem }
+
+    val problems: List<String>
+        get() = sources.mapNotNull { source -> source.problem?.let { "${source.name} $it" } }
+}
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -61,18 +75,16 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
             _state.value = _state.value.copy(
                 loading = true,
                 error = null,
-                problems = emptyList(),
                 answered = 0,
                 askedSources = 0,
-                results = emptyList(),
+                sources = emptyList(),
             )
             try {
                 // Источники отвечают с разной скоростью, поэтому результаты
                 // показываются по мере поступления, а не после самого медленного.
                 repo.search(query).collect { progress ->
                     _state.value = _state.value.copy(
-                        results = progress.results,
-                        problems = progress.problems,
+                        sources = progress.sources,
                         answered = progress.answered,
                         askedSources = progress.askedSources,
                         loading = !progress.finished,
@@ -110,6 +122,11 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
                 )
             }
         }
+    }
+
+    /** Выбор вкладки. null — «Все». */
+    fun selectSource(providerId: String?) {
+        _state.value = _state.value.copy(selectedSource = providerId)
     }
 
     fun clearError() {

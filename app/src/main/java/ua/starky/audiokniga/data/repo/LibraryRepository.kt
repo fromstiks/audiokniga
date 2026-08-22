@@ -30,23 +30,39 @@ import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.data.provider.RssProvider
 import java.util.UUID
 
+/** Что ответил один источник. Вкладки поиска строятся прямо по этому списку. */
+data class SourceOutcome(
+    val providerId: String,
+    val name: String,
+    val shortName: String,
+    val results: List<SearchResult> = emptyList(),
+    val problem: String? = null,
+    val done: Boolean = false,
+)
+
 /**
  * Ход поиска. Источники отвечают вразнобой, поэтому состояние отдаётся порциями:
  * список растёт по мере ответов, а счётчик показывает, сколько ещё ждать.
  */
 data class SearchProgress(
-    val results: List<SearchResult> = emptyList(),
-    val problems: List<String> = emptyList(),
-    val answered: Int = 0,
-    val askedSources: Int = 0,
+    val sources: List<SourceOutcome> = emptyList(),
 ) {
+    val answered: Int get() = sources.count { it.done }
+    val askedSources: Int get() = sources.size
     val finished: Boolean get() = answered >= askedSources
+
+    /** Всё найденное вместе, без повторов между источниками. */
+    val results: List<SearchResult> get() =
+        sources.flatMap { it.results }.distinctBy { it.book.id }
+
+    val problems: List<String> get() =
+        sources.mapNotNull { source -> source.problem?.let { "${source.name} $it" } }
 
     /** Сообщение на весь экран показываем только когда искать было негде или никто не ответил. */
     fun summaryError(): String? = when {
         !finished || results.isNotEmpty() -> null
         askedSources == 0 -> "Нет ни одного включённого источника"
-        problems.size == askedSources -> "Ни один источник не ответил"
+        sources.all { it.problem != null } -> "Ни один источник не ответил"
         else -> null
     }
 }
@@ -75,8 +91,8 @@ class LibraryRepository(context: Context) {
     /**
      * Опрашивает все подходящие источники параллельно и отдаёт результат порциями.
      *
-     * Ошибки не проглатываются: если источник не ответил, это видно на экране —
-     * иначе «нет сети» и «ничего не нашлось» выглядят одинаково.
+     * Результат хранится по источникам, а не общей кучей: так видно, кто ответил,
+     * кто молчит и у кого что нашлось — и по этому же строятся вкладки на экране.
      */
     fun search(query: String): Flow<SearchProgress> = channelFlow {
         val trimmed = query.trim()
@@ -92,33 +108,28 @@ class LibraryRepository(context: Context) {
             ProviderRegistry.searchable
         }
 
-        val seen = LinkedHashMap<String, SearchResult>()
-        val problems = mutableListOf<String>()
-        var answered = 0
+        val state = providers.map { provider ->
+            SourceOutcome(
+                providerId = provider.id,
+                name = provider.displayName,
+                shortName = provider.shortName,
+            )
+        }.toMutableList()
         val guard = Mutex()
 
-        send(SearchProgress(askedSources = providers.size))
+        send(SearchProgress(state.toList()))
 
-        providers.map { provider ->
+        providers.mapIndexed { index, provider ->
             launch(Dispatchers.IO) {
                 val outcome = runCatching { provider.search(trimmed) }
+                outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
                 guard.withLock {
-                    outcome
-                        .onSuccess { found -> found.forEach { seen.putIfAbsent(it.book.id, it) } }
-                        .onFailure { error ->
-                            // Отмену показывать нельзя: это наш собственный новый запрос.
-                            if (error is CancellationException) throw error
-                            problems += "${provider.displayName} ${error.readableMessage()}"
-                        }
-                    answered++
-                    send(
-                        SearchProgress(
-                            results = seen.values.toList(),
-                            problems = problems.toList(),
-                            answered = answered,
-                            askedSources = providers.size,
-                        )
+                    state[index] = state[index].copy(
+                        results = outcome.getOrDefault(emptyList()),
+                        problem = outcome.exceptionOrNull()?.readableMessage(),
+                        done = true,
                     )
+                    send(SearchProgress(state.toList()))
                 }
             }
         }.joinAll()
@@ -269,6 +280,14 @@ class LibraryRepository(context: Context) {
             runCatching { addCustomSource(name, url) }.onSuccess { added++ }
         }
         added
+    }
+
+    /** Правка уже добавленного источника: имя и адрес. */
+    suspend fun updateCustomSource(id: String, name: String, url: String) = withContext(Dispatchers.IO) {
+        val address = url.trim()
+        if (address.isEmpty()) return@withContext
+        val title = name.trim().ifBlank { address.substringAfter("//").substringBefore('/') }
+        customSources.update(id, title, address)
     }
 
     suspend fun setCustomSourceEnabled(id: String, enabled: Boolean) =

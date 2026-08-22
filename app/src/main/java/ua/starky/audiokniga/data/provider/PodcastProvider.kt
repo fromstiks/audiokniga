@@ -21,6 +21,7 @@ class PodcastProvider : AudiobookProvider {
 
     override val id: String = ID
     override val displayName: String = "Подкасты и озвучки"
+    override val shortName: String = "Подкасты"
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -35,7 +36,7 @@ class PodcastProvider : AudiobookProvider {
             ?: return emptyList()
         val results = runCatching { root["results"]?.jsonArray }.getOrNull() ?: return emptyList()
 
-        return results.mapNotNull { element ->
+        val found = results.mapNotNull { element ->
             val item = element as? JsonObject ?: return@mapNotNull null
             // Лента — это и есть идентификатор книги: по ней потом читаются главы.
             val feed = item.str("feedUrl")?.takeIf { it.startsWith("http", true) } ?: return@mapNotNull null
@@ -52,6 +53,8 @@ class PodcastProvider : AudiobookProvider {
                 chaptersHint = item.str("trackCount")?.toIntOrNull() ?: 0,
             )
         }
+        // Каталог подкастов охотно отдаёт англоязычный спам на любой запрос.
+        return Relevance.rank(found, q)
     }
 
     override suspend fun details(bookId: String): BookDetails {

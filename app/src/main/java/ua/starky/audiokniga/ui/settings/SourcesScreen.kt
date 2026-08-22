@@ -67,6 +67,7 @@ fun SourcesScreen(
     var url by remember { mutableStateOf("") }
     var bulk by remember { mutableStateOf("") }
     var bulkMode by remember { mutableStateOf(false) }
+    var editingId by remember { mutableStateOf<String?>(null) }
 
     Column(
         Modifier
@@ -143,13 +144,25 @@ fun SourcesScreen(
             }
 
             items(sources, key = { it.id }) { source ->
-                CustomSourceRow(
-                    source = source,
-                    busy = busy,
-                    onToggle = { viewModel.setEnabled(source, !source.enabled) },
-                    onOpen = { viewModel.open(source, onOpenBook) },
-                    onRemove = { viewModel.remove(source) },
-                )
+                if (editingId == source.id) {
+                    EditSourceRow(
+                        source = source,
+                        onSave = { name, url ->
+                            viewModel.updateSource(source, name, url)
+                            editingId = null
+                        },
+                        onCancel = { editingId = null },
+                    )
+                } else {
+                    CustomSourceRow(
+                        source = source,
+                        busy = busy,
+                        onEdit = { editingId = source.id },
+                        onToggle = { viewModel.setEnabled(source, !source.enabled) },
+                        onOpen = { viewModel.open(source, onOpenBook) },
+                        onRemove = { viewModel.remove(source) },
+                    )
+                }
             }
         }
 
@@ -373,10 +386,81 @@ private fun Field(
     }
 }
 
+/** Правка источника на месте: нажатие на строку раскрывает поля. */
+@Composable
+private fun EditSourceRow(
+    source: CustomSource,
+    onSave: (String, String) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val c = Neu.colors
+    var name by remember(source.id) { mutableStateOf(source.name) }
+    var url by remember(source.id) { mutableStateOf(source.url) }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .neuRaised(RoundedCornerShape(17.dp), elevation = 5.dp)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Field(value = name, onChange = { name = it }, placeholder = "Название источника")
+        Field(
+            value = url,
+            onChange = { url = it },
+            placeholder = "Адрес",
+            keyboardType = KeyboardType.Uri,
+            onDone = { onSave(name, url) },
+        )
+        Text(
+            if (url.contains(CustomSource.QUERY_PLACEHOLDER)) {
+                "Участвует в поиске: вместо ${CustomSource.QUERY_PLACEHOLDER} подставится запрос."
+            } else {
+                "Без ${CustomSource.QUERY_PLACEHOLDER} источник не ищет, а открывается целиком. " +
+                    "Найдите на сайте страницу поиска и вставьте ${CustomSource.QUERY_PLACEHOLDER} " +
+                    "туда, где в адресе стоит искомое слово."
+            },
+            color = if (url.contains(CustomSource.QUERY_PLACEHOLDER)) c.accent else c.inkFaint,
+            fontSize = 11.sp,
+            lineHeight = 16.sp,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                Modifier
+                    .neuRaised(RoundedCornerShape(14.dp), elevation = 4.dp)
+                    .clickable(enabled = url.isNotBlank()) { onSave(name, url) }
+                    .padding(horizontal = 15.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    AppIcons.Check,
+                    null,
+                    tint = if (url.isBlank()) c.inkFaint else c.accent,
+                    modifier = Modifier.size(14.dp),
+                )
+                Text("Сохранить", color = c.ink, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+            }
+            Row(
+                Modifier
+                    .neuRaised(RoundedCornerShape(14.dp), elevation = 4.dp)
+                    .clickable(onClick = onCancel)
+                    .padding(horizontal = 15.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(AppIcons.Close, null, tint = c.inkFaint, modifier = Modifier.size(13.dp))
+                Text("Отмена", color = c.inkMuted, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
 @Composable
 private fun CustomSourceRow(
     source: CustomSource,
     busy: Boolean,
+    onEdit: () -> Unit,
     onToggle: () -> Unit,
     onOpen: () -> Unit,
     onRemove: () -> Unit,
@@ -386,6 +470,7 @@ private fun CustomSourceRow(
         Modifier
             .fillMaxWidth()
             .neuRaised(RoundedCornerShape(17.dp), elevation = 5.dp)
+            .clickable(onClick = onEdit)
             .padding(horizontal = 13.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(11.dp),
@@ -413,8 +498,9 @@ private fun CustomSourceRow(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                if (source.isSearchTemplate) "Участвует в поиске" else "Открывается целиком",
-                color = c.offline,
+                if (source.isSearchTemplate) "Ищет · нажмите, чтобы изменить"
+                else "Не ищет · нажмите, чтобы добавить ${CustomSource.QUERY_PLACEHOLDER}",
+                color = if (source.isSearchTemplate) c.accent else c.offline,
                 fontSize = 9.5.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 0.7.sp,

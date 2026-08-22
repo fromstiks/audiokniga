@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -39,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.starky.audiokniga.data.provider.ProviderRegistry
+import ua.starky.audiokniga.data.repo.SourceOutcome
 import ua.starky.audiokniga.ui.SectionHeader
 import ua.starky.audiokniga.ui.components.AppIcons
 import ua.starky.audiokniga.ui.components.BookCover
@@ -105,8 +107,18 @@ fun SearchScreen(
             )
         }
 
+        if (state.sources.isNotEmpty()) {
+            Spacer(Modifier.height(11.dp))
+            SourceTabs(
+                sources = state.sources,
+                selected = state.selectedSource,
+                totalResults = state.sources.flatMap { it.results }.distinctBy { it.book.id }.size,
+                onSelect = viewModel::selectSource,
+            )
+        }
+
         if (state.loading || state.opening) {
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(10.dp))
             SearchProgressBar(
                 answered = state.answered,
                 total = state.askedSources,
@@ -114,19 +126,28 @@ fun SearchScreen(
             )
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
 
         Box(Modifier.weight(1f)) {
+            val visible = state.visibleResults
             when {
-                state.results.isEmpty() && state.error != null -> Hint(state.error!!, isError = true)
+                // На вкладке источника его собственная беда важнее общей картины.
+                visible.isEmpty() && state.selectedProblem != null ->
+                    Hint(state.selectedProblem!!, isError = true)
 
-                state.results.isEmpty() && state.searched && !state.loading ->
+                visible.isEmpty() && state.error != null -> Hint(state.error!!, isError = true)
+
+                visible.isEmpty() && state.searched && !state.loading ->
                     Hint(
-                        "Ничего не нашлось. Попробуйте одно слово вместо нескольких, " +
-                            "имя автора или название на языке оригинала."
+                        if (state.selectedSource != null) {
+                            "Этот источник ничего не нашёл. Посмотрите другие вкладки."
+                        } else {
+                            "Ничего не нашлось. Попробуйте одно слово вместо нескольких, " +
+                                "имя автора или название на языке оригинала."
+                        }
                     )
 
-                state.results.isEmpty() && !state.loading -> Hint(
+                visible.isEmpty() && !state.loading -> Hint(
                     "Ищем сразу по всем подключённым источникам: Internet Archive, LibriVox, " +
                         "каталог подкастов и ваши собственные источники из настроек.\n\n" +
                         "Ссылку на RSS-ленту можно вставить прямо сюда."
@@ -137,10 +158,10 @@ fun SearchScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     contentPadding = PaddingValues(bottom = 20.dp),
                 ) {
-                    if (state.problems.isNotEmpty()) {
+                    if (state.selectedSource == null && state.problems.isNotEmpty()) {
                         item { ProblemsNote(state.problems) }
                     }
-                    items(state.results, key = { it.book.id }) { result ->
+                    items(visible, key = { it.book.id }) { result ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -190,7 +211,7 @@ fun SearchScreen(
         }
 
         // Ошибка при открытии книги не должна прятать уже найденный список.
-        if (state.results.isNotEmpty() && state.error != null) {
+        if (state.visibleResults.isNotEmpty() && state.error != null) {
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -201,6 +222,93 @@ fun SearchScreen(
             ) {
                 Text(state.error!!, color = c.inkMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
+        }
+    }
+}
+
+/**
+ * Вкладки по источникам. Подпись короткая — места мало, а знать, кто что нашёл, нужно.
+ * Цифра — сколько нашлось, точка — источник ещё думает, крестик — не ответил.
+ */
+@Composable
+private fun SourceTabs(
+    sources: List<SourceOutcome>,
+    selected: String?,
+    totalResults: Int,
+    onSelect: (String?) -> Unit,
+) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        item {
+            SourceTab(
+                label = "Все",
+                count = totalResults,
+                selected = selected == null,
+                pending = false,
+                failed = false,
+                onClick = { onSelect(null) },
+            )
+        }
+        items(sources, key = { it.providerId }) { source ->
+            SourceTab(
+                label = source.shortName,
+                count = source.results.size,
+                selected = selected == source.providerId,
+                pending = !source.done,
+                failed = source.problem != null,
+                onClick = { onSelect(source.providerId) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SourceTab(
+    label: String,
+    count: Int,
+    selected: Boolean,
+    pending: Boolean,
+    failed: Boolean,
+    onClick: () -> Unit,
+) {
+    val c = Neu.colors
+    val shape = RoundedCornerShape(percent = 50)
+    Row(
+        Modifier
+            .then(
+                if (selected) Modifier.neuSunken(shape, depth = 3.dp)
+                else Modifier.neuRaised(shape, elevation = 4.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            label,
+            color = when {
+                selected -> c.ink
+                failed -> c.inkFaint
+                else -> c.inkMuted
+            },
+            fontSize = 12.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        when {
+            pending -> CircularProgressIndicator(
+                color = c.accent,
+                strokeWidth = 1.5.dp,
+                modifier = Modifier.size(9.dp),
+            )
+            failed -> Icon(AppIcons.Close, null, tint = c.offline, modifier = Modifier.size(10.dp))
+            count > 0 -> Text(
+                count.toString(),
+                color = if (selected) c.accent else c.inkFaint,
+                fontSize = 10.5.sp,
+                fontWeight = FontWeight.ExtraBold,
+            )
+            else -> Text("0", color = c.inkFaint, fontSize = 10.5.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

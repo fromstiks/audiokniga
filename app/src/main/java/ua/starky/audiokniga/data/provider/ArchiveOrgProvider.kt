@@ -22,6 +22,7 @@ class ArchiveOrgProvider : AudiobookProvider {
 
     override val id: String = ID
     override val displayName: String = "Internet Archive"
+    override val shortName: String = "Archive"
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -57,7 +58,8 @@ class ArchiveOrgProvider : AudiobookProvider {
             if (collected.size >= ENOUGH) break
             for ((id, result) in runQuery(attempt, page)) collected.getOrPut(id) { result }
         }
-        return collected.values.toList()
+        // Широкие попытки приносят много постороннего — отсеиваем и сортируем по близости.
+        return Relevance.rank(collected.values.toList(), safe)
     }
 
     /** Символы, значимые для поискового языка, в пользовательском запросе только мешают. */

@@ -25,8 +25,12 @@ data class PlaybackState(
     val durationMs: Long = 0L,
     val speed: Float = 1f,
     val bookId: String? = null,
+    val chapterTitle: String? = null,
     val error: String? = null,
-)
+) {
+    /** Есть ли что показывать в свёрнутом плеере. */
+    val hasQueue: Boolean get() = bookId != null
+}
 
 /**
  * Мост между интерфейсом и MediaSession. Держит одно соединение на приложение.
@@ -87,6 +91,7 @@ class PlayerConnection(
             positionMs = player.currentPosition.coerceAtLeast(0L),
             durationMs = player.duration.takeIf { it > 0 } ?: 0L,
             speed = player.playbackParameters.speed,
+            chapterTitle = player.currentMediaItem?.mediaMetadata?.title?.toString(),
             error = null,
         )
     }

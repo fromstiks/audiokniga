@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,9 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.starky.audiokniga.data.provider.ProviderRegistry
+import ua.starky.audiokniga.ui.SectionHeader
 import ua.starky.audiokniga.ui.components.AppIcons
-import ua.starky.audiokniga.ui.components.CoverPlaceholder
-import ua.starky.audiokniga.ui.components.NeuIconButton
+import ua.starky.audiokniga.ui.components.BookCover
 import ua.starky.audiokniga.ui.theme.Neu
 import ua.starky.audiokniga.ui.theme.neuRaised
 import ua.starky.audiokniga.ui.theme.neuSunken
@@ -47,7 +48,7 @@ import ua.starky.audiokniga.ui.theme.neuSunken
 @Composable
 fun SearchScreen(
     viewModel: SearchViewModel,
-    onBack: () -> Unit,
+    onOpenDrawer: () -> Unit,
     onOpenBook: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -60,14 +61,11 @@ fun SearchScreen(
             .statusBarsPadding()
             .padding(horizontal = 18.dp),
     ) {
-        Row(
-            Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            NeuIconButton(AppIcons.Back, "Назад", onBack, size = 36.dp, iconSize = 15.dp)
-            Text("Поиск книг", color = c.ink, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-        }
+        SectionHeader(
+            title = "Поиск книг",
+            subtitle = "${ProviderRegistry.searchable.size} источников",
+            onOpenDrawer = onOpenDrawer,
+        )
 
         Row(
             Modifier
@@ -82,7 +80,11 @@ fun SearchScreen(
                 value = state.query,
                 onValueChange = viewModel::onQueryChange,
                 singleLine = true,
-                textStyle = LocalTextStyle.current.copy(color = c.ink, fontSize = 14.sp, fontWeight = FontWeight.Medium),
+                textStyle = LocalTextStyle.current.copy(
+                    color = c.ink,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
                 cursorBrush = SolidColor(c.accent),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { viewModel.search() }),
@@ -90,7 +92,7 @@ fun SearchScreen(
                 decorationBox = { inner ->
                     if (state.query.isEmpty()) {
                         Text(
-                            "Название, автор или ссылка на RSS",
+                            "Название, автор или ссылка на ленту",
                             color = c.inkFaint,
                             fontSize = 13.5.sp,
                             maxLines = 1,
@@ -100,78 +102,137 @@ fun SearchScreen(
                     inner()
                 },
             )
+            if (state.loading || state.opening) {
+                CircularProgressIndicator(
+                    color = c.accent,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
 
-        when {
-            state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = c.accent)
-            }
-            state.error != null -> Hint(state.error!!)
-            state.results.isEmpty() && state.searched -> Hint("Ничего не нашлось. Попробуйте другое написание или имя автора.")
-            state.results.isEmpty() -> Hint(
-                "Ищем по LibriVox и Internet Archive — это книги в общественном достоянии. " +
-                    "Ссылку на RSS-ленту можно вставить прямо в поле поиска."
-            )
-            else -> LazyColumn(
-                Modifier.weight(1f).navigationBarsPadding(),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 20.dp),
-            ) {
-                items(state.results, key = { it.book.id }) { result ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .neuRaised(RoundedCornerShape(18.dp), elevation = 5.dp)
-                            .clickable { viewModel.addToLibrary(result.book.id, onOpenBook) }
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        CoverPlaceholder(
-                            title = result.book.title,
-                            modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)),
-                            fontSize = 7,
-                        )
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(
-                                result.book.title,
-                                color = c.ink,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
+        Box(Modifier.weight(1f)) {
+            when {
+                state.results.isEmpty() && state.error != null -> Hint(state.error!!, isError = true)
+
+                state.results.isEmpty() && state.searched && !state.loading ->
+                    Hint("Ничего не нашлось. Попробуйте другое написание, имя автора или язык оригинала.")
+
+                state.results.isEmpty() && !state.loading -> Hint(
+                    "Ищем сразу по всем подключённым источникам: Internet Archive, LibriVox, " +
+                        "каталог подкастов и ваши собственные источники из настроек.\n\n" +
+                        "Ссылку на RSS-ленту можно вставить прямо сюда."
+                )
+
+                else -> LazyColumn(
+                    Modifier.fillMaxSize().navigationBarsPadding(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    contentPadding = PaddingValues(bottom = 20.dp),
+                ) {
+                    if (state.problems.isNotEmpty()) {
+                        item { ProblemsNote(state.problems) }
+                    }
+                    items(state.results, key = { it.book.id }) { result ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .neuRaised(RoundedCornerShape(18.dp), elevation = 5.dp)
+                                .clickable { viewModel.addToLibrary(result.book.id, onOpenBook) }
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            BookCover(
+                                title = result.book.title,
+                                coverUrl = result.book.coverUrl,
+                                modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)),
+                                fontSize = 7,
                             )
-                            Text(result.book.author, color = c.inkMuted, fontSize = 12.sp)
-                            Text(
-                                buildString {
-                                    append(ProviderRegistry.displayName(result.book.providerId))
-                                    if (result.chaptersHint > 0) append(" · ${result.chaptersHint} глав")
-                                },
-                                color = c.inkFaint,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.8.sp,
-                            )
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    result.book.title,
+                                    color = c.ink,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    result.book.author,
+                                    color = c.inkMuted,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    buildString {
+                                        append(ProviderRegistry.displayName(result.book.providerId))
+                                        if (result.chaptersHint > 0) append(" · ${result.chaptersHint} частей")
+                                    },
+                                    color = c.inkFaint,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.8.sp,
+                                )
+                            }
                         }
                     }
                 }
             }
         }
+
+        // Ошибка при открытии книги не должна прятать уже найденный список.
+        if (state.results.isNotEmpty() && state.error != null) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 14.dp)
+                    .neuSunken(RoundedCornerShape(16.dp), depth = 3.dp)
+                    .clickable { viewModel.clearError() }
+                    .padding(horizontal = 14.dp, vertical = 11.dp)
+            ) {
+                Text(state.error!!, color = c.inkMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+/** Кто из источников промолчал. Полезно, когда результат есть, но неполный. */
+@Composable
+private fun ProblemsNote(problems: List<String>) {
+    val c = Neu.colors
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .neuSunken(RoundedCornerShape(15.dp), depth = 2.5.dp)
+            .padding(horizontal = 13.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(
+            "Ответили не все источники",
+            color = c.offline,
+            fontSize = 10.5.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 0.8.sp,
+        )
+        problems.forEach { problem ->
+            Text(problem, color = c.inkFaint, fontSize = 11.sp, lineHeight = 15.sp)
+        }
     }
 }
 
 @Composable
-private fun Hint(text: String) {
+private fun Hint(text: String, isError: Boolean = false) {
     val c = Neu.colors
-    Box(Modifier.fillMaxSize().padding(top = 40.dp), contentAlignment = Alignment.TopCenter) {
+    Box(Modifier.fillMaxSize().padding(top = 30.dp), contentAlignment = Alignment.TopCenter) {
         Text(
             text,
-            color = c.inkMuted,
+            color = if (isError) c.offline else c.inkMuted,
             fontSize = 13.5.sp,
             lineHeight = 21.sp,
-            modifier = Modifier.padding(horizontal = 12.dp),
+            modifier = Modifier.padding(horizontal = 4.dp),
         )
     }
 }

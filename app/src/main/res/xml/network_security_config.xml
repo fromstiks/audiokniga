@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Многие открытые каталоги и особенно пользовательские источники до сих пор отдают
+  файлы по обычному http. Начиная с Android 9 система запрещает это по умолчанию,
+  и такие ссылки просто не открывались бы. Шифрование остаётся предпочтительным:
+  https используется везде, где сервер его поддерживает.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

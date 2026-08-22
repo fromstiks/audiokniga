@@ -7,9 +7,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.launch
 import ua.starky.audiokniga.ui.AppNavigation
 import ua.starky.audiokniga.ui.theme.AudioknigaTheme
 
@@ -30,18 +28,8 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             val themeMode by settings.themeMode.collectAsStateWithLifecycle(initialValue = 0)
-            val scope = rememberCoroutineScope()
-
             AudioknigaTheme(themeMode = themeMode) {
-                AppNavigation(
-                    themeMode = themeMode,
-                    onToggleTheme = {
-                        scope.launch {
-                            // системная → светлая → тёмная → системная
-                            settings.setThemeMode((themeMode + 1) % 3)
-                        }
-                    },
-                )
+                AppNavigation()
             }
         }
     }

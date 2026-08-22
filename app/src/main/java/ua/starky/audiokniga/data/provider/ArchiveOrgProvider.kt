@@ -15,8 +15,8 @@ import ua.starky.audiokniga.data.model.SearchResult
 import java.net.URLEncoder
 
 /**
- * Internet Archive, коллекция audio_bookspoetry. Открытый поиск и метаданные,
- * прямые ссылки на файлы. https://archive.org/developers
+ * Internet Archive: открытый поиск, открытые метаданные, прямые ссылки на файлы.
+ * https://archive.org/developers
  */
 class ArchiveOrgProvider : AudiobookProvider {
 
@@ -25,26 +25,53 @@ class ArchiveOrgProvider : AudiobookProvider {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+    /**
+     * Internet Archive — самый большой из открытых источников: здесь лежит весь LibriVox,
+     * старые радиопостановки и множество любительских озвучек.
+     *
+     * Ищем в два захода. Сначала по книжным коллекциям — там результат заведомо по теме.
+     * Если нашлось мало, повторяем запрос по всему аудио: у неанглоязычных книг коллекция
+     * часто проставлена как попало, и узкий фильтр их прячет.
+     */
     override suspend fun search(query: String, page: Int): List<SearchResult> {
-        val q = "(${query.trim()}) AND collection:(audio_bookspoetry) AND mediatype:(audio)"
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
+        val escaped = q.replace("\"", " ")
+
+        val collected = LinkedHashMap<String, SearchResult>()
+
+        val focused = "($escaped) AND mediatype:(audio) AND collection:($BOOK_COLLECTIONS)"
+        collected.putAll(runQuery(focused, page))
+
+        if (collected.size < BROADEN_BELOW) {
+            val broad = "($escaped) AND mediatype:(audio)"
+            for ((id, result) in runQuery(broad, page)) collected.getOrPut(id) { result }
+        }
+
+        return collected.values.toList()
+    }
+
+    private suspend fun runQuery(q: String, page: Int): Map<String, SearchResult> {
         val url = buildString {
             append("$BASE/advancedsearch.php?q=${q.encode()}")
             append("&fl[]=identifier&fl[]=title&fl[]=creator&fl[]=language&fl[]=runtime")
             append("&rows=$PAGE_SIZE&page=$page&output=json")
         }
-        val root = runCatching { json.parseToJsonElement(Http.getString(url)).jsonObject }.getOrNull()
-            ?: return emptyList()
+        val body = runCatching { Http.getString(url) }.getOrNull() ?: return emptyMap()
+        val root = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return emptyMap()
         val docs = runCatching { root["response"]?.jsonObject?.get("docs")?.jsonArray }.getOrNull()
-            ?: return emptyList()
+            ?: return emptyMap()
 
-        return docs.mapNotNull { element ->
-            val doc = element as? JsonObject ?: return@mapNotNull null
-            val identifier = doc.str("identifier") ?: return@mapNotNull null
-            SearchResult(
+        val out = LinkedHashMap<String, SearchResult>()
+        for (element in docs) {
+            val doc = element as? JsonObject ?: continue
+            val identifier = doc.str("identifier") ?: continue
+            val bookId = composeBookId(ID, identifier)
+            out[bookId] = SearchResult(
                 Book(
-                    id = composeBookId(ID, identifier),
+                    id = bookId,
                     providerId = ID,
-                    title = doc.str("title") ?: identifier,
+                    title = doc.firstOf("title") ?: identifier,
                     author = doc.firstOf("creator") ?: "Неизвестный автор",
                     coverUrl = "$BASE/services/img/$identifier",
                     language = doc.firstOf("language"),
@@ -52,6 +79,7 @@ class ArchiveOrgProvider : AudiobookProvider {
                 )
             )
         }
+        return out
     }
 
     override suspend fun details(bookId: String): BookDetails {
@@ -143,6 +171,13 @@ class ArchiveOrgProvider : AudiobookProvider {
     companion object {
         const val ID = "archive"
         private const val BASE = "https://archive.org"
-        private const val PAGE_SIZE = 25
+        private const val PAGE_SIZE = 30
+
+        /** Коллекции, где лежат именно книги, а не музыка и не лекции. */
+        private const val BOOK_COLLECTIONS =
+            "librivoxaudio OR audio_bookspoetry OR audiobooksandpoetry OR audio_religion OR oldtimeradio"
+
+        /** Ниже этого числа результатов имеет смысл искать шире. */
+        private const val BROADEN_BELOW = 8
     }
 }

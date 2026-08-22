@@ -2,7 +2,10 @@ name: Android build
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      # Ветки Claude тоже собираются: готовый APK нужен для проверки на устройстве.
+      - 'claude/**'
   pull_request:
   workflow_dispatch:
 

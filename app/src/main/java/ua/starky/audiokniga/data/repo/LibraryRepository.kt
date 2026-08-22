@@ -2,6 +2,9 @@ package ua.starky.audiokniga.data.repo
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
@@ -14,13 +17,29 @@ import ua.starky.audiokniga.data.model.BookDetails
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.SearchResult
 import ua.starky.audiokniga.data.model.SourceMode
+import ua.starky.audiokniga.data.db.CustomSourceEntity
+import ua.starky.audiokniga.data.model.CustomSource
+import ua.starky.audiokniga.data.provider.CustomProvider
 import ua.starky.audiokniga.data.provider.ProviderRegistry
+import ua.starky.audiokniga.data.provider.RssProvider
+import java.util.UUID
+
+/**
+ * Что вернул опрос источников. Помимо находок несёт список тех, кто не ответил,
+ * — без него пустой экран ничего не объясняет.
+ */
+data class SearchOutcome(
+    val results: List<SearchResult> = emptyList(),
+    val problems: List<String> = emptyList(),
+    val askedSources: Int = 0,
+)
 
 class LibraryRepository(context: Context) {
 
     private val db = AppDatabase.get(context)
     private val books = db.bookDao()
     private val chapters = db.chapterDao()
+    private val customSources = db.customSourceDao()
 
     fun observeLibrary(): Flow<List<Book>> = books.observeLibrary().map { list -> list.map { it.toBook() } }
 
@@ -35,25 +54,59 @@ class LibraryRepository(context: Context) {
     fun observeBookWithChapters(bookId: String): Flow<Pair<Book?, List<Chapter>>> =
         combine(observeBook(bookId), observeChapters(bookId)) { book, list -> book to list }
 
-    suspend fun search(query: String): List<SearchResult> = withContext(Dispatchers.IO) {
+    /**
+     * Опрашивает все подходящие источники разом.
+     *
+     * Ошибки не проглатываются: если источник не ответил, это видно на экране —
+     * иначе «ничего не нашлось» и «нет интернета» выглядят одинаково.
+     */
+    suspend fun search(query: String): SearchOutcome = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
-        if (trimmed.isEmpty()) return@withContext emptyList()
+        if (trimmed.isEmpty()) return@withContext SearchOutcome()
 
-        // Ссылку считаем RSS-лентой, слово — поисковым запросом к остальным источникам.
-        val providers = if (trimmed.startsWith("http")) {
-            ProviderRegistry.all.filter { it.id == "rss" }
+        // Ссылку разбираем как ленту, слово отправляем во все поисковые источники.
+        val providers = if (trimmed.startsWith("http", ignoreCase = true)) {
+            ProviderRegistry.all.filter { it.id == RssProvider.ID }
         } else {
             ProviderRegistry.searchable
         }
 
-        providers.flatMap { provider ->
-            runCatching { provider.search(trimmed) }.getOrElse { emptyList() }
+        val answers = coroutineScope {
+            providers.map { provider ->
+                async {
+                    provider to runCatching { provider.search(trimmed) }
+                }
+            }.awaitAll()
         }
+
+        val results = mutableListOf<SearchResult>()
+        val problems = mutableListOf<String>()
+        for ((provider, outcome) in answers) {
+            outcome
+                .onSuccess { results += it }
+                .onFailure { problems += "${provider.displayName} ${it.readableMessage()}" }
+        }
+
+        SearchOutcome(
+            results = results.distinctBy { it.book.id },
+            problems = problems,
+            askedSources = providers.size,
+        )
     }
+
+    private fun Throwable.readableMessage(): String =
+        message?.takeIf { it.isNotBlank() } ?: "не ответил"
 
     /** Кладёт книгу в библиотеку вместе с оглавлением. */
     suspend fun addToLibrary(bookId: String): BookDetails = withContext(Dispatchers.IO) {
         val details = ProviderRegistry.forBook(bookId).details(bookId)
+        store(details)
+        details
+    }
+
+    /** Запись книги и её глав в базу. Вынесено отдельно: главы приходят разными путями. */
+    private suspend fun store(details: BookDetails) {
+        val bookId = details.book.id
         val existing = books.getBook(bookId)
         val now = System.currentTimeMillis()
         books.upsert(
@@ -88,7 +141,6 @@ class LibraryRepository(context: Context) {
                 )
             }
         )
-        details
     }
 
     suspend fun ensureLoaded(bookId: String): List<Chapter> = withContext(Dispatchers.IO) {
@@ -98,6 +150,10 @@ class LibraryRepository(context: Context) {
     }
 
     suspend fun setSourceMode(bookId: String, mode: SourceMode) = books.setSourceMode(bookId, mode.ordinal)
+
+    suspend fun sourceModeOf(bookId: String): SourceMode = withContext(Dispatchers.IO) {
+        SourceMode.fromOrdinalOrAuto(books.getBook(bookId)?.sourceMode ?: 0)
+    }
 
     suspend fun saveProgress(bookId: String, chapterIndex: Int, positionMs: Long) =
         books.saveProgress(bookId, chapterIndex, positionMs, System.currentTimeMillis())
@@ -111,6 +167,43 @@ class LibraryRepository(context: Context) {
         chapters.deleteForBook(bookId)
         books.delete(bookId)
     }
+
+    // ——— Свои источники ———
+
+    fun observeCustomSources(): Flow<List<CustomSource>> =
+        customSources.observeAll().map { list -> list.map { it.toCustomSource() } }
+
+    suspend fun addCustomSource(name: String, url: String): CustomSource = withContext(Dispatchers.IO) {
+        val source = CustomSource(
+            id = UUID.randomUUID().toString(),
+            name = name.trim().ifBlank { url.trim().substringAfter("//").substringBefore('/') },
+            url = url.trim(),
+            enabled = true,
+            addedAt = System.currentTimeMillis(),
+        )
+        customSources.upsert(source.toEntity())
+        source
+    }
+
+    suspend fun setCustomSourceEnabled(id: String, enabled: Boolean) =
+        customSources.setEnabled(id, enabled)
+
+    suspend fun removeCustomSource(id: String) = customSources.delete(id)
+
+    /** Открывает свой источник целиком и кладёт его в библиотеку как книгу. */
+    suspend fun openCustomSource(source: CustomSource): String = withContext(Dispatchers.IO) {
+        val provider = ProviderRegistry.customProviders.firstOrNull { it.source.id == source.id }
+            ?: CustomProvider(source)
+        val details = provider.open()
+        store(details)
+        details.book.id
+    }
+
+    private fun CustomSourceEntity.toCustomSource() =
+        CustomSource(id = id, name = name, url = url, enabled = enabled, addedAt = addedAt)
+
+    private fun CustomSource.toEntity() =
+        CustomSourceEntity(id = id, name = name, url = url, enabled = enabled, addedAt = addedAt)
 
     private fun BookEntity.toBook() = Book(
         id = id,

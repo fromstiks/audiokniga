@@ -127,4 +127,51 @@ object AppIcons {
         moveTo(20f, 12f); arcToRelative(8f, 8f, 0f, true, true, -2.4f, -5.7f)
         moveTo(20f, 4f); verticalLineTo(9f); horizontalLineTo(15f)
     }
+
+    /** Гамбургер: открывает боковое меню. */
+    val Menu: ImageVector = stroked("Menu", width = 2.2f) {
+        moveTo(4f, 7f); horizontalLineTo(20f)
+        moveTo(4f, 12f); horizontalLineTo(20f)
+        moveTo(4f, 17f); horizontalLineTo(14f)
+    }
+
+    /** Шестерёнка настроек — упрощённая, без зубцов по кругу. */
+    val Settings: ImageVector = stroked("Settings") {
+        moveTo(4f, 7f); horizontalLineTo(20f)
+        moveTo(4f, 12f); horizontalLineTo(20f)
+        moveTo(4f, 17f); horizontalLineTo(20f)
+        moveTo(9f, 7f); moveToRelative(-2f, 0f)
+        arcToRelative(2f, 2f, 0f, true, false, 4f, 0f)
+        arcToRelative(2f, 2f, 0f, true, false, -4f, 0f)
+        moveTo(15f, 12f); moveToRelative(-2f, 0f)
+        arcToRelative(2f, 2f, 0f, true, false, 4f, 0f)
+        arcToRelative(2f, 2f, 0f, true, false, -4f, 0f)
+        moveTo(9f, 17f); moveToRelative(-2f, 0f)
+        arcToRelative(2f, 2f, 0f, true, false, 4f, 0f)
+        arcToRelative(2f, 2f, 0f, true, false, -4f, 0f)
+    }
+
+    val Plus: ImageVector = stroked("Plus", width = 2.2f) {
+        moveTo(12f, 5f); verticalLineTo(19f)
+        moveTo(5f, 12f); horizontalLineTo(19f)
+    }
+
+    /** Звено цепи — свой источник по ссылке. */
+    val Link: ImageVector = stroked("Link") {
+        moveTo(10f, 13.5f); arcToRelative(4f, 4f, 0f, false, false, 6f, 0.5f)
+        lineTo(18.5f, 11.5f)
+        arcToRelative(4f, 4f, 0f, false, false, -5.7f, -5.7f)
+        lineTo(11.4f, 7.2f)
+        moveTo(14f, 10.5f); arcToRelative(4f, 4f, 0f, false, false, -6f, -0.5f)
+        lineTo(5.5f, 12.5f)
+        arcToRelative(4f, 4f, 0f, false, false, 5.7f, 5.7f)
+        lineTo(12.6f, 16.8f)
+    }
+
+    /** Стопка книг — «моя полка». */
+    val Shelf: ImageVector = stroked("Shelf") {
+        moveTo(4f, 6f); horizontalLineTo(10f); verticalLineTo(20f); horizontalLineTo(4f); close()
+        moveTo(11.5f, 6f); horizontalLineTo(16f); verticalLineTo(20f); horizontalLineTo(11.5f); close()
+        moveTo(17.5f, 7.5f); lineTo(21f, 8.4f); lineTo(18.4f, 20f); lineTo(15.6f, 19.3f)
+    }
 }

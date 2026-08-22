@@ -23,23 +23,39 @@ class LibriVoxProvider : AudiobookProvider {
 
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
 
+    /**
+     * У LibriVox нет поиска «по вхождению»: без префикса `^` поле сравнивается точно,
+     * с ним — «начинается с». Поэтому один запрос почти всегда возвращает пустоту.
+     * Идём несколькими попытками и склеиваем результат, убирая повторы.
+     */
     override suspend fun search(query: String, page: Int): List<SearchResult> {
         val offset = (page - 1) * PAGE_SIZE
-        val url = buildString {
-            append("$BASE/api/feed/audiobooks/?format=json&limit=$PAGE_SIZE&offset=$offset")
-            append("&title=^${query.encode()}")
-        }
-        val books = parseBooks(Http.getString(url)) ?: run {
-            // LibriVox не нашёл по названию — пробуем по автору.
-            val byAuthor = "$BASE/api/feed/audiobooks/?format=json&limit=$PAGE_SIZE&offset=$offset&author=^${query.encode()}"
-            parseBooks(Http.getString(byAuthor))
-        } ?: return emptyList()
+        val q = query.trim()
+        if (q.isEmpty()) return emptyList()
 
-        return books.mapNotNull { element ->
-            val obj = element as? JsonObject ?: return@mapNotNull null
-            val book = obj.toBook() ?: return@mapNotNull null
-            SearchResult(book, obj.str("num_sections")?.toIntOrNull() ?: 0)
+        val attempts = listOf(
+            "title=^${q.encode()}",
+            "author=^${q.encode()}",
+            "title=^${q.substringBefore(' ').encode()}",
+            "author=^${q.substringAfterLast(' ').encode()}",
+        ).distinct()
+
+        val collected = LinkedHashMap<String, SearchResult>()
+        for (attempt in attempts) {
+            if (collected.size >= PAGE_SIZE) break
+            val url = "$BASE/api/feed/audiobooks/?format=json&limit=$PAGE_SIZE&offset=$offset&$attempt"
+            // Одна неудачная попытка не должна ронять весь поиск.
+            val body = runCatching { Http.getString(url) }.getOrNull() ?: continue
+            val books = parseBooks(body) ?: continue
+            for (element in books) {
+                val obj = element as? JsonObject ?: continue
+                val book = obj.toBook() ?: continue
+                collected.getOrPut(book.id) {
+                    SearchResult(book, obj.str("num_sections")?.toIntOrNull() ?: 0)
+                }
+            }
         }
+        return collected.values.toList()
     }
 
     override suspend fun details(bookId: String): BookDetails {

@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -18,7 +17,7 @@ import ua.starky.audiokniga.data.model.DownloadState
 import ua.starky.audiokniga.data.model.SourceMode
 import ua.starky.audiokniga.download.DownloadInfo
 import ua.starky.audiokniga.playback.PlaybackState
-import ua.starky.audiokniga.playback.PlayerConnection
+import ua.starky.audiokniga.settings.SettingsStore
 
 data class PlayerUiState(
     val book: Book? = null,
@@ -26,7 +25,10 @@ data class PlayerUiState(
     val sourceMode: SourceMode = SourceMode.AUTO,
     val playback: PlaybackState = PlaybackState(),
     val downloadedCount: Int = 0,
+    val skipSeconds: Int = SettingsStore.DEFAULT_SKIP_SECONDS,
     val loading: Boolean = true,
+    /** Книга не открылась совсем — экран должен объяснить, почему, а не остаться пустым. */
+    val failure: String? = null,
     val message: String? = null,
 )
 
@@ -34,92 +36,90 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
 
     private val repo = application.app.repository
     private val downloads = application.app.downloads
-    private val connection = PlayerConnection(application, viewModelScope)
+    private val playback = application.app.playback
+    private val settings = application.app.settings
 
     private val downloadInfo = MutableStateFlow<Map<String, DownloadInfo>>(emptyMap())
     private val loading = MutableStateFlow(true)
+    private val failure = MutableStateFlow<String?>(null)
     private val message = MutableStateFlow<String?>(null)
-
-    private var queueLoadedFor: String? = null
 
     val state: StateFlow<PlayerUiState> = combine(
         repo.observeBookWithChapters(bookId),
         repo.observeSourceMode(bookId),
-        connection.state,
+        playback.state,
         downloadInfo,
-        combine(loading, message) { l, m -> l to m },
-    ) { bookAndChapters, mode, playback, info, loadingAndMessage ->
+        combine(loading, failure, message, settings.skipSeconds) { l, f, m, skip -> Screen(l, f, m, skip) },
+    ) { bookAndChapters, mode, playbackState, info, screen ->
         val (book, chapters) = bookAndChapters
-        val (isLoading, msg) = loadingAndMessage
         PlayerUiState(
             book = book,
-            chapters = chapters.map { chapter -> chapter.toUi(info, playback) },
+            chapters = chapters.map { chapter -> chapter.toUi(info, playbackState) },
             sourceMode = mode,
-            playback = playback,
+            playback = playbackState,
             downloadedCount = chapters.count { info[it.id]?.state == DownloadState.DOWNLOADED },
-            loading = isLoading && book == null,
-            message = msg ?: playback.error,
+            skipSeconds = screen.skipSeconds,
+            loading = screen.loading && book == null,
+            failure = screen.failure.takeIf { book == null },
+            message = screen.message ?: playbackState.error,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlayerUiState())
+
+    private data class Screen(
+        val loading: Boolean,
+        val failure: String?,
+        val message: String?,
+        val skipSeconds: Int,
+    )
 
     init {
         viewModelScope.launch {
             downloads.observe().collect { downloadInfo.value = it }
         }
+        load()
+    }
+
+    private fun load() {
         viewModelScope.launch {
-            runCatching { repo.ensureLoaded(bookId) }
-                .onFailure { message.value = it.message ?: "Не удалось открыть книгу" }
+            loading.value = true
+            failure.value = null
+            runCatching { playback.open(bookId, play = false) }
+                .onFailure { failure.value = it.message ?: "Не удалось открыть книгу" }
             loading.value = false
-            connection.connect { prepareQueue(play = false) }
         }
     }
 
-    private fun prepareQueue(play: Boolean) {
-        viewModelScope.launch {
-            if (queueLoadedFor == bookId && !play) return@launch
-            val chapters = runCatching { repo.ensureLoaded(bookId) }.getOrElse { return@launch }
-            if (chapters.isEmpty()) return@launch
-            val (chapterIndex, positionMs) = repo.lastPosition(bookId)
-            connection.setSourceMode(currentMode)
-            connection.setQueue(bookId, chapters, chapterIndex, positionMs, play)
-            queueLoadedFor = bookId
-        }
-    }
+    fun retry() = load()
 
-    private val currentMode: SourceMode get() = state.value.sourceMode
-
-    fun playPause() {
-        if (queueLoadedFor == null) prepareQueue(play = true) else connection.playPause()
-    }
+    fun playPause() = playback.playPause(bookId)
 
     fun playChapter(index: Int) {
-        if (queueLoadedFor == null) {
-            prepareQueue(play = true)
-        } else {
-            connection.playChapter(index)
-        }
+        playback.playChapter(index)
         viewModelScope.launch { repo.saveProgress(bookId, index, 0L) }
     }
 
-    fun seekFraction(fraction: Float) = connection.seekToFraction(fraction)
+    fun seekFraction(fraction: Float) = playback.seekFraction(fraction)
 
-    fun skip(deltaMs: Long) = connection.skipBy(deltaMs)
+    fun skipForward() = playback.skipForward()
+
+    fun skipBack() = playback.skipBack()
 
     fun cycleSpeed() {
         val next = when (state.value.playback.speed) {
-            in 0.99f..1.01f -> 1.2f
-            in 1.19f..1.21f -> 1.5f
+            in 0.99f..1.01f -> 1.25f
+            in 1.24f..1.26f -> 1.5f
             in 1.49f..1.51f -> 2.0f
             else -> 1.0f
         }
-        connection.setSpeed(next)
+        playback.setSpeed(next)
+        viewModelScope.launch { settings.setPlaybackSpeed(next) }
     }
 
     /** Тот самый переключатель. Режим запоминается для книги. */
     fun setSourceMode(mode: SourceMode) {
         viewModelScope.launch {
             repo.setSourceMode(bookId, mode)
-            connection.setSourceMode(mode)
+            playback.setSourceMode(mode)
             message.value = when (mode) {
                 SourceMode.OFFLINE -> "Играем только скачанное"
                 SourceMode.ONLINE -> "Играем из сети"
@@ -136,35 +136,35 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
         viewModelScope.launch {
             val chapters = runCatching { repo.ensureLoaded(bookId) }.getOrElse { return@launch }
             val info = downloadInfo.value
-            downloads.downloadAll(chapters.filter { info[it.id]?.state != DownloadState.DOWNLOADED })
-            message.value = "Скачиваю ${chapters.size} глав"
+            val pending = chapters.filter { info[it.id]?.state != DownloadState.DOWNLOADED }
+            if (pending.isEmpty()) {
+                message.value = "Все главы уже на устройстве"
+                return@launch
+            }
+            downloads.downloadAll(pending)
+            message.value = "Скачиваю ${pending.size} глав"
         }
     }
 
     fun clearMessage() {
         message.value = null
-        connection.clearError()
-    }
-
-    fun saveProgressNow() {
-        val playback = state.value.playback
-        viewModelScope.launch { repo.saveProgress(bookId, playback.chapterIndex, playback.positionMs) }
+        playback.clearError()
     }
 
     override fun onCleared() {
-        saveProgressNow()
-        connection.release()
+        // viewModelScope здесь уже отменяется, поэтому сохраняем через общий плеер.
+        playback.saveProgressNow()
         super.onCleared()
     }
 
-    private fun Chapter.toUi(info: Map<String, DownloadInfo>, playback: PlaybackState): ChapterUi {
+    private fun Chapter.toUi(info: Map<String, DownloadInfo>, playbackState: PlaybackState): ChapterUi {
         val download = info[id]
-        val isCurrent = playback.chapterIndex == index
+        val isCurrent = playbackState.bookId == bookId && playbackState.chapterIndex == index
         return ChapterUi(
             chapter = this,
             downloadState = download?.state ?: DownloadState.NONE,
             downloadProgress = download?.progress ?: 0f,
-            isPlaying = isCurrent && playback.isPlaying,
+            isPlaying = isCurrent && playbackState.isPlaying,
             isCurrent = isCurrent,
         )
     }

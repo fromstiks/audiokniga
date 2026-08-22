@@ -39,3 +39,12 @@ data class ChapterEntity(
     val positionMs: Long = 0L,
     val completed: Boolean = false,
 )
+
+@Entity(tableName = "custom_sources")
+data class CustomSourceEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val url: String,
+    val enabled: Boolean,
+    val addedAt: Long,
+)

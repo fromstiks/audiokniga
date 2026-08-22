@@ -17,7 +17,10 @@ data class SearchUiState(
     val results: List<SearchResult> = emptyList(),
     val loading: Boolean = false,
     val error: String? = null,
+    /** Источники, которые не ответили. Показываются рядом с результатами, а не вместо них. */
+    val problems: List<String> = emptyList(),
     val searched: Boolean = false,
+    val opening: Boolean = false,
 )
 
 class SearchViewModel(application: Application) : AndroidViewModel(application) {
@@ -45,8 +48,17 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
         job = viewModelScope.launch {
             _state.value = _state.value.copy(loading = true, error = null)
             runCatching { repo.search(query) }
-                .onSuccess { results ->
-                    _state.value = _state.value.copy(results = results, loading = false, searched = true)
+                .onSuccess { outcome ->
+                    _state.value = _state.value.copy(
+                        results = outcome.results,
+                        problems = outcome.problems,
+                        loading = false,
+                        searched = true,
+                        // Пусто и при этом никто не ответил — это не «не нашлось», а сбой связи.
+                        error = if (outcome.results.isEmpty() && outcome.problems.size == outcome.askedSources) {
+                            "Ни один источник не ответил"
+                        } else null,
+                    )
                 }
                 .onFailure { error ->
                     _state.value = _state.value.copy(
@@ -61,15 +73,22 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     /** Кладёт книгу в библиотеку и возвращает её id для перехода в плеер. */
     fun addToLibrary(bookId: String, onDone: (String) -> Unit) {
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true)
+            _state.value = _state.value.copy(opening = true, error = null)
             runCatching { repo.addToLibrary(bookId) }
                 .onSuccess {
-                    _state.value = _state.value.copy(loading = false)
+                    _state.value = _state.value.copy(opening = false)
                     onDone(bookId)
                 }
                 .onFailure { error ->
-                    _state.value = _state.value.copy(loading = false, error = error.message ?: "Не удалось открыть книгу")
+                    _state.value = _state.value.copy(
+                        opening = false,
+                        error = error.message ?: "Не удалось открыть книгу",
+                    )
                 }
         }
+    }
+
+    fun clearError() {
+        _state.value = _state.value.copy(error = null)
     }
 }

@@ -54,3 +54,18 @@ interface ChapterDao {
         upsertAll(chapters)
     }
 }
+
+@Dao
+interface CustomSourceDao {
+    @Query("SELECT * FROM custom_sources ORDER BY addedAt ASC")
+    fun observeAll(): Flow<List<CustomSourceEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(source: CustomSourceEntity)
+
+    @Query("UPDATE custom_sources SET enabled = :enabled WHERE id = :id")
+    suspend fun setEnabled(id: String, enabled: Boolean)
+
+    @Query("DELETE FROM custom_sources WHERE id = :id")
+    suspend fun delete(id: String)
+}

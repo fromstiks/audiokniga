@@ -60,3 +60,29 @@ data class SearchResult(
     val book: Book,
     val chaptersHint: Int = 0,
 )
+
+/**
+ * Источник, добавленный пользователем прямо в приложении.
+ *
+ * [url] — либо адрес ленты или страницы с аудио, либо шаблон поиска с подстановкой
+ * `{q}` вместо запроса. В первом случае источник открывается целиком с экрана
+ * «Источники», во втором участвует в обычном поиске по книгам.
+ */
+data class CustomSource(
+    val id: String,
+    val name: String,
+    val url: String,
+    val enabled: Boolean = true,
+    val addedAt: Long = 0L,
+) {
+    /** Шаблон поиска отличается от простой ленты наличием подстановки. */
+    val isSearchTemplate: Boolean get() = url.contains(QUERY_PLACEHOLDER)
+
+    fun urlFor(query: String): String =
+        if (isSearchTemplate) url.replace(QUERY_PLACEHOLDER, java.net.URLEncoder.encode(query, "UTF-8"))
+        else url
+
+    companion object {
+        const val QUERY_PLACEHOLDER = "{q}"
+    }
+}

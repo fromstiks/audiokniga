@@ -41,6 +41,15 @@
             </intent-filter>
         </service>
 
+        <!--
+          Планировщик Media3: без него загрузки не возобновляются после перезапуска
+          и при временной потере сети. Требует именно такого объявления.
+        -->
+        <service
+            android:name="androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService"
+            android:permission="android.permission.BIND_JOB_SERVICE"
+            android:exported="true" />
+
         <service
             android:name=".download.AudioDownloadService"
             android:exported="false"

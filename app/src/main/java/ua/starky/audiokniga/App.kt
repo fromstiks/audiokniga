@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.data.repo.LibraryRepository
+import ua.starky.audiokniga.download.DownloadModule
 import ua.starky.audiokniga.download.DownloadTracker
 import ua.starky.audiokniga.playback.PlaybackController
 import ua.starky.audiokniga.settings.SettingsStore
@@ -32,7 +33,7 @@ class App : Application() {
         repository = LibraryRepository(this)
         downloads = DownloadTracker(this)
         settings = SettingsStore(this)
-        playback = PlaybackController(this, repository, scope)
+        playback = PlaybackController(this, repository, downloads, scope)
 
         // Источники, добавленные пользователем, должны участвовать в поиске сразу
         // после добавления — поэтому реестр подписан на таблицу, а не читает её однажды.
@@ -41,6 +42,12 @@ class App : Application() {
         }
         scope.launch {
             settings.skipSeconds.collectLatest { playback.skipMs = it * 1000L }
+        }
+
+        // Хранилище скачанного открывается с чтением диска. Делаем это заранее и в фоне,
+        // иначе первое нажатие на «скачать» подвешивает интерфейс.
+        scope.launch(Dispatchers.IO) {
+            runCatching { DownloadModule.cache(this@App) }
         }
     }
 }

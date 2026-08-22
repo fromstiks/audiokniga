@@ -25,6 +25,8 @@ data class PlayerUiState(
     val sourceMode: SourceMode = SourceMode.AUTO,
     val playback: PlaybackState = PlaybackState(),
     val downloadedCount: Int = 0,
+    /** Сколько глав в книге всего — в офлайне список короче, и это нужно объяснить. */
+    val totalChapters: Int = 0,
     val skipSeconds: Int = SettingsStore.DEFAULT_SKIP_SECONDS,
     val loading: Boolean = true,
     /** Книга не открылась совсем — экран должен объяснить, почему, а не остаться пустым. */
@@ -49,15 +51,25 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
         repo.observeSourceMode(bookId),
         playback.state,
         downloadInfo,
-        combine(loading, failure, message, settings.skipSeconds) { l, f, m, skip -> Screen(l, f, m, skip) },
+        combine(loading, failure, message, playback.notice, settings.skipSeconds) { l, f, m, notice, skip ->
+            Screen(l, f, m ?: notice, skip)
+        },
     ) { bookAndChapters, mode, playbackState, info, screen ->
         val (book, chapters) = bookAndChapters
+        // В режиме «Офлайн» на экране остаётся ровно то, что лежит на устройстве:
+        // иначе обе вкладки выглядят одинаково и обещают то, чего офлайн не даёт.
+        val visible = if (mode == SourceMode.OFFLINE) {
+            chapters.filter { info[it.id]?.state == DownloadState.DOWNLOADED }
+        } else {
+            chapters
+        }
         PlayerUiState(
             book = book,
-            chapters = chapters.map { chapter -> chapter.toUi(info, playbackState) },
+            chapters = visible.map { chapter -> chapter.toUi(info, playbackState) },
             sourceMode = mode,
             playback = playbackState,
             downloadedCount = chapters.count { info[it.id]?.state == DownloadState.DOWNLOADED },
+            totalChapters = chapters.size,
             skipSeconds = screen.skipSeconds,
             loading = screen.loading && book == null,
             failure = screen.failure.takeIf { book == null },
@@ -93,9 +105,9 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
 
     fun playPause() = playback.playPause(bookId)
 
-    fun playChapter(index: Int) {
-        playback.playChapter(index)
-        viewModelScope.launch { repo.saveProgress(bookId, index, 0L) }
+    fun playChapter(chapter: Chapter) {
+        playback.playChapter(chapter.id)
+        viewModelScope.launch { repo.saveProgress(bookId, chapter.index, 0L) }
     }
 
     fun seekFraction(fraction: Float) = playback.seekFraction(fraction)
@@ -119,30 +131,41 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
     fun setSourceMode(mode: SourceMode) {
         viewModelScope.launch {
             repo.setSourceMode(bookId, mode)
-            playback.setSourceMode(mode)
+            playback.applySourceMode(bookId, mode)
             message.value = when (mode) {
-                SourceMode.OFFLINE -> "Играем только скачанное"
+                SourceMode.OFFLINE -> "Только скачанное, сеть не используется"
                 SourceMode.ONLINE -> "Играем из сети"
                 SourceMode.AUTO -> "Скачанное — с устройства, остальное — из сети"
             }
         }
     }
 
-    fun downloadChapter(chapter: Chapter) = downloads.download(chapter)
+    fun downloadChapter(chapter: Chapter) {
+        val problem = downloads.download(chapter)
+        message.value = problem?.let { "Не удалось поставить в очередь: $it" }
+            ?: "Качаю «${chapter.title}»"
+    }
 
-    fun removeChapter(chapterId: String) = downloads.remove(chapterId)
+    fun removeChapter(chapterId: String) {
+        downloads.remove(chapterId)?.let { message.value = "Не удалось удалить: $it" }
+    }
 
     fun downloadAll() {
         viewModelScope.launch {
-            val chapters = runCatching { repo.ensureLoaded(bookId) }.getOrElse { return@launch }
+            val chapters = runCatching { repo.ensureLoaded(bookId) }
+                .getOrElse {
+                    message.value = it.message ?: "Оглавление не загрузилось"
+                    return@launch
+                }
             val info = downloadInfo.value
             val pending = chapters.filter { info[it.id]?.state != DownloadState.DOWNLOADED }
             if (pending.isEmpty()) {
                 message.value = "Все главы уже на устройстве"
                 return@launch
             }
-            downloads.downloadAll(pending)
-            message.value = "Скачиваю ${pending.size} глав"
+            val problem = downloads.downloadAll(pending)
+            message.value = problem?.let { "Не удалось поставить в очередь: $it" }
+                ?: "Качаю ${pending.size} ${chapterWord(pending.size)}"
         }
     }
 
@@ -159,7 +182,8 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
 
     private fun Chapter.toUi(info: Map<String, DownloadInfo>, playbackState: PlaybackState): ChapterUi {
         val download = info[id]
-        val isCurrent = playbackState.bookId == bookId && playbackState.chapterIndex == index
+        // Сравниваем по идентификатору: в офлайне очередь короче и номера не совпадают.
+        val isCurrent = playbackState.chapterId == id
         return ChapterUi(
             chapter = this,
             downloadState = download?.state ?: DownloadState.NONE,
@@ -167,5 +191,16 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
             isPlaying = isCurrent && playbackState.isPlaying,
             isCurrent = isCurrent,
         )
+    }
+}
+
+private fun chapterWord(count: Int): String {
+    val mod100 = count % 100
+    val mod10 = count % 10
+    return when {
+        mod100 in 11..14 -> "глав"
+        mod10 == 1 -> "главу"
+        mod10 in 2..4 -> "главы"
+        else -> "глав"
     }
 }

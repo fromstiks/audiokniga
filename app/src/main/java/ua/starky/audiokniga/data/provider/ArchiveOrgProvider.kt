@@ -29,27 +29,40 @@ class ArchiveOrgProvider : AudiobookProvider {
      * Internet Archive — самый большой из открытых источников: здесь лежит весь LibriVox,
      * старые радиопостановки и множество любительских озвучек.
      *
-     * Ищем в два захода. Сначала по книжным коллекциям — там результат заведомо по теме.
-     * Если нашлось мало, повторяем запрос по всему аудио: у неанглоязычных книг коллекция
-     * часто проставлена как попало, и узкий фильтр их прячет.
+     * Поиск идёт лесенкой, от точного к широкому, и останавливается, как только набралось
+     * достаточно. Так многословный запрос вроде «мир карика» не проваливается в пустоту:
+     * поиск по умолчанию требует все слова сразу, а в названии записи их может не быть.
      */
     override suspend fun search(query: String, page: Int): List<SearchResult> {
-        val q = query.trim()
-        if (q.isEmpty()) return emptyList()
-        val escaped = q.replace("\"", " ")
+        val safe = query.sanitize()
+        if (safe.isEmpty()) return emptyList()
+        val words = safe.split(WHITESPACE).filter { it.length > 1 }
 
-        val collected = LinkedHashMap<String, SearchResult>()
-
-        val focused = "($escaped) AND mediatype:(audio) AND collection:($BOOK_COLLECTIONS)"
-        collected.putAll(runQuery(focused, page))
-
-        if (collected.size < BROADEN_BELOW) {
-            val broad = "($escaped) AND mediatype:(audio)"
-            for ((id, result) in runQuery(broad, page)) collected.getOrPut(id) { result }
+        val attempts = buildList {
+            // Точная фраза — сначала в книжных коллекциях, потом во всём аудио.
+            add("""title:("$safe") AND mediatype:(audio) AND collection:($BOOK_COLLECTIONS)""")
+            add("""("$safe") AND mediatype:(audio) AND collection:($BOOK_COLLECTIONS)""")
+            add("""("$safe") AND mediatype:(audio)""")
+            if (words.size > 1) {
+                // Любое из слов: названия на archive.org редко совпадают с запросом дословно.
+                val anyWord = words.joinToString(" OR ")
+                add("""title:($anyWord) AND mediatype:(audio) AND collection:($BOOK_COLLECTIONS)""")
+                add("""($anyWord) AND mediatype:(audio) AND collection:($BOOK_COLLECTIONS)""")
+                add("""($anyWord) AND mediatype:(audio)""")
+            }
         }
 
+        val collected = LinkedHashMap<String, SearchResult>()
+        for (attempt in attempts) {
+            if (collected.size >= ENOUGH) break
+            for ((id, result) in runQuery(attempt, page)) collected.getOrPut(id) { result }
+        }
         return collected.values.toList()
     }
+
+    /** Символы, значимые для поискового языка, в пользовательском запросе только мешают. */
+    private fun String.sanitize(): String =
+        trim().replace(LUCENE_SPECIALS, " ").replace(WHITESPACE, " ").trim()
 
     private suspend fun runQuery(q: String, page: Int): Map<String, SearchResult> {
         val url = buildString {
@@ -177,7 +190,10 @@ class ArchiveOrgProvider : AudiobookProvider {
         private const val BOOK_COLLECTIONS =
             "librivoxaudio OR audio_bookspoetry OR audiobooksandpoetry OR audio_religion OR oldtimeradio"
 
-        /** Ниже этого числа результатов имеет смысл искать шире. */
-        private const val BROADEN_BELOW = 8
+        /** Набрали столько — дальше расширять запрос незачем. */
+        private const val ENOUGH = 12
+
+        private val LUCENE_SPECIALS = Regex("""["\[\]{}()^~:\\/!+-]""")
+        private val WHITESPACE = Regex("\\s+")
     }
 }

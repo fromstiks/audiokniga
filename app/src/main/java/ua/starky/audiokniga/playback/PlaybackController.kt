@@ -10,8 +10,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import ua.starky.audiokniga.data.model.Chapter
+import ua.starky.audiokniga.data.model.DownloadState
 import ua.starky.audiokniga.data.model.SourceMode
 import ua.starky.audiokniga.data.repo.LibraryRepository
+import ua.starky.audiokniga.download.DownloadTracker
 
 /**
  * Единственное на приложение управление воспроизведением.
@@ -23,6 +26,7 @@ import ua.starky.audiokniga.data.repo.LibraryRepository
 class PlaybackController(
     context: Context,
     private val repo: LibraryRepository,
+    private val downloads: DownloadTracker,
     private val scope: CoroutineScope,
 ) {
     private val connection = PlayerConnection(context, scope)
@@ -33,6 +37,10 @@ class PlaybackController(
     private val _openBookId = MutableStateFlow<String?>(null)
     val openBookId: StateFlow<String?> = _openBookId.asStateFlow()
 
+    /** Последняя причина, по которой очередь оказалась пустой. Её показывает экран книги. */
+    private val _notice = MutableStateFlow<String?>(null)
+    val notice: StateFlow<String?> = _notice.asStateFlow()
+
     /** Шаг кнопок перемотки, задаётся в настройках. */
     @Volatile
     var skipMs: Long = 20_000L
@@ -40,6 +48,7 @@ class PlaybackController(
     private val ready = CompletableDeferred<Unit>()
     private val queueLock = Mutex()
     private var queuedBookId: String? = null
+    private var queuedMode: SourceMode? = null
 
     init {
         connection.connect { ready.complete(Unit) }
@@ -47,25 +56,79 @@ class PlaybackController(
     }
 
     /**
-     * Готовит книгу к прослушиванию. Повторный вызов для той же книги очередь не пересобирает,
-     * иначе каждое открытие экрана сбрасывало бы позицию.
+     * Готовит книгу к прослушиванию. Повторный вызов для той же книги и того же режима
+     * очередь не пересобирает, иначе каждое открытие экрана сбрасывало бы позицию.
      */
     suspend fun open(bookId: String, play: Boolean = false) {
         ready.await()
         _openBookId.value = bookId
+        val mode = repo.sourceModeOf(bookId)
 
         queueLock.withLock {
-            if (queuedBookId == bookId) {
+            if (queuedBookId == bookId && queuedMode == mode) {
                 if (play) connection.playPause()
                 return
             }
-            val chapters = repo.ensureLoaded(bookId)
-            if (chapters.isEmpty()) return
-            val (chapterIndex, positionMs) = repo.lastPosition(bookId)
-            connection.setSourceMode(repo.sourceModeOf(bookId))
-            connection.setQueue(bookId, chapters, chapterIndex, positionMs, play)
-            queuedBookId = bookId
+            fillQueue(bookId, mode, play = play, keepPosition = false)
         }
+    }
+
+    /**
+     * Смена режима источника. В «Офлайн» очередь пересобирается только из скачанного —
+     * иначе плеер спотыкался бы о главы, которых нет на устройстве, и продолжал бы
+     * лезть в сеть. Текущая глава сохраняется, если она пережила отбор.
+     */
+    suspend fun applySourceMode(bookId: String, mode: SourceMode) {
+        ready.await()
+        connection.setSourceMode(mode)
+        queueLock.withLock {
+            fillQueue(bookId, mode, play = state.value.isPlaying, keepPosition = true)
+        }
+    }
+
+    private suspend fun fillQueue(bookId: String, mode: SourceMode, play: Boolean, keepPosition: Boolean) {
+        val chapters = queueFor(bookId, mode)
+
+        if (chapters.isEmpty()) {
+            queuedBookId = null
+            queuedMode = null
+            connection.clearQueue()
+            _notice.value = if (mode == SourceMode.OFFLINE) {
+                "Ни одна глава ещё не скачана. Переключитесь на «Онлайн» и нажмите загрузку."
+            } else {
+                "У этой книги нет доступных файлов"
+            }
+            return
+        }
+
+        val startIndex: Int
+        val startPosition: Long
+        if (keepPosition) {
+            val currentId = state.value.chapterId
+            val found = chapters.indexOfFirst { it.id == currentId }
+            startIndex = found.coerceAtLeast(0)
+            // Позицию внутри главы имеет смысл сохранять только если это та же глава.
+            startPosition = if (found >= 0) state.value.positionMs else 0L
+        } else {
+            val (savedIndex, savedPosition) = repo.lastPosition(bookId)
+            val found = chapters.indexOfFirst { it.index == savedIndex }
+            startIndex = found.coerceAtLeast(0)
+            startPosition = if (found >= 0) savedPosition else 0L
+        }
+
+        connection.setSourceMode(mode)
+        connection.setQueue(bookId, chapters, startIndex, startPosition, play)
+        queuedBookId = bookId
+        queuedMode = mode
+        _notice.value = null
+    }
+
+    /** В офлайне в очередь попадает только то, что действительно лежит на устройстве. */
+    private suspend fun queueFor(bookId: String, mode: SourceMode): List<Chapter> {
+        val all = repo.ensureLoaded(bookId)
+        if (mode != SourceMode.OFFLINE) return all
+        val downloaded = downloads.snapshotAsync()
+        return all.filter { downloaded[it.id]?.state == DownloadState.DOWNLOADED }
     }
 
     /** Нажатие play там, где книга ещё не загружена в плеер, — например в свёрнутом плеере. */
@@ -82,22 +145,25 @@ class PlaybackController(
 
     fun skipBack() = connection.skipBy(-skipMs)
 
-    fun skipBy(deltaMs: Long) = connection.skipBy(deltaMs)
-
     fun seekFraction(fraction: Float) = connection.seekToFraction(fraction)
 
-    fun playChapter(index: Int) = connection.playChapter(index)
+    fun playChapter(chapterId: String) = connection.playChapterById(chapterId)
 
     fun setSpeed(speed: Float) = connection.setSpeed(speed)
 
-    fun setSourceMode(mode: SourceMode) = connection.setSourceMode(mode)
-
-    fun clearError() = connection.clearError()
+    fun clearError() {
+        connection.clearError()
+        _notice.value = null
+    }
 
     /** Книга удалена из библиотеки — плеер не должен продолжать её показывать. */
     fun forget(bookId: String) {
         if (_openBookId.value == bookId) _openBookId.value = null
-        if (queuedBookId == bookId) queuedBookId = null
+        if (queuedBookId == bookId) {
+            queuedBookId = null
+            queuedMode = null
+            connection.clearQueue()
+        }
     }
 
     /** Сохранить позицию, не дожидаясь результата: вызывается при закрытии экрана. */

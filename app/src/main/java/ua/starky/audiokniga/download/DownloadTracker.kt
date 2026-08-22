@@ -6,10 +6,15 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadManager
 import androidx.media3.exoplayer.offline.DownloadService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.DownloadState
 
@@ -39,20 +44,32 @@ class DownloadTracker(private val context: Context) {
         return result
     }
 
-    /** Пока что-то качается, состояние обновляется раз в секунду. */
-    fun observe(): Flow<Map<String, DownloadInfo>> = callbackFlow {
-        trySend(snapshot())
+    suspend fun snapshotAsync(): Map<String, DownloadInfo> = withContext(Dispatchers.IO) { snapshot() }
+
+    /**
+     * Пока что-то качается, состояние обновляется раз в секунду.
+     *
+     * Слушателя DownloadManager обязан регистрировать поток, на котором менеджер создан
+     * (главный), а вот чтение индекса — это работа с диском, и её мы уводим в фон:
+     * раньше она шла в главном потоке и подтормаживала список глав.
+     */
+    fun observe(): Flow<Map<String, DownloadInfo>> = changes()
+        .buffer(1, BufferOverflow.DROP_OLDEST)
+        .map { snapshotAsync() }
+
+    private fun changes(): Flow<Unit> = callbackFlow {
+        trySend(Unit)
         val listener = object : DownloadManager.Listener {
             override fun onDownloadChanged(
                 downloadManager: DownloadManager,
                 download: Download,
                 finalException: Exception?,
             ) {
-                trySend(snapshot())
+                trySend(Unit)
             }
 
             override fun onDownloadRemoved(downloadManager: DownloadManager, download: Download) {
-                trySend(snapshot())
+                trySend(Unit)
             }
         }
         manager.addListener(listener)
@@ -60,7 +77,7 @@ class DownloadTracker(private val context: Context) {
         val ticker = launch {
             while (true) {
                 kotlinx.coroutines.delay(1000)
-                if (manager.currentDownloads.isNotEmpty()) trySend(snapshot())
+                if (manager.currentDownloads.isNotEmpty()) trySend(Unit)
             }
         }
 
@@ -70,27 +87,43 @@ class DownloadTracker(private val context: Context) {
         }
     }
 
-    fun download(chapter: Chapter) {
+    /**
+     * Ставит главу в очередь загрузки.
+     *
+     * @return null, если всё в порядке, иначе — причина, которую можно показать.
+     * Раньше сбой запуска сервиса терялся, и нажатие на «скачать» просто ничего не делало.
+     */
+    fun download(chapter: Chapter): String? = runCatching {
         DownloadService.sendAddDownload(
             context,
             AudioDownloadService::class.java,
             DownloadModule.buildRequest(chapter.id, chapter.audioUrl),
-            /* foreground = */ false,
+            // Загрузка должна пережить сворачивание приложения, а с Android 8
+            // это возможно только для сервиса переднего плана.
+            /* foreground = */ true,
         )
+    }.exceptionOrNull()?.let { it.message ?: it::class.java.simpleName }
+
+    /** Ставит в очередь все главы и возвращает первую ошибку, не бросая остальные. */
+    fun downloadAll(chapters: List<Chapter>): String? {
+        var problem: String? = null
+        for (chapter in chapters) {
+            val error = download(chapter)
+            if (error != null && problem == null) problem = error
+        }
+        return problem
     }
 
-    fun downloadAll(chapters: List<Chapter>) = chapters.forEach(::download)
-
-    fun remove(chapterId: String) {
+    fun remove(chapterId: String): String? = runCatching {
         DownloadService.sendRemoveDownload(
             context,
             AudioDownloadService::class.java,
             chapterId,
             /* foreground = */ false,
         )
-    }
+    }.exceptionOrNull()?.let { it.message ?: it::class.java.simpleName }
 
-    fun removeAll(chapterIds: List<String>) = chapterIds.forEach(::remove)
+    fun removeAll(chapterIds: List<String>) = chapterIds.forEach { remove(it) }
 
     private fun Download.toInfo(): DownloadInfo {
         val state = when (this.state) {

@@ -25,6 +25,9 @@ data class PlaybackState(
     val durationMs: Long = 0L,
     val speed: Float = 1f,
     val bookId: String? = null,
+    /** Идентификатор текущей главы. Сравнивать по нему надёжнее, чем по номеру:
+     *  в режиме «Офлайн» очередь короче, и номера перестают совпадать. */
+    val chapterId: String? = null,
     val chapterTitle: String? = null,
     val error: String? = null,
 ) {
@@ -91,6 +94,7 @@ class PlayerConnection(
             positionMs = player.currentPosition.coerceAtLeast(0L),
             durationMs = player.duration.takeIf { it > 0 } ?: 0L,
             speed = player.playbackParameters.speed,
+            chapterId = player.currentMediaItem?.mediaId,
             chapterTitle = player.currentMediaItem?.mediaMetadata?.title?.toString(),
             error = null,
         )
@@ -156,9 +160,28 @@ class PlayerConnection(
 
     fun playChapter(index: Int) {
         val player = controller ?: return
+        if (index !in 0 until player.mediaItemCount) return
         player.seekTo(index, 0L)
         player.prepare()
         player.play()
+    }
+
+    /** Глава ищется по идентификатору: её место в очереди зависит от режима источника. */
+    fun playChapterById(chapterId: String) {
+        val player = controller ?: return
+        for (index in 0 until player.mediaItemCount) {
+            if (player.getMediaItemAt(index).mediaId == chapterId) {
+                playChapter(index)
+                return
+            }
+        }
+    }
+
+    fun clearQueue() {
+        val player = controller ?: return
+        player.stop()
+        player.clearMediaItems()
+        _state.value = _state.value.copy(bookId = null, chapterId = null, chapterTitle = null)
     }
 
     fun setSpeed(speed: Float) { controller?.setPlaybackSpeed(speed) }

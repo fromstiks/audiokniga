@@ -64,7 +64,7 @@ fun PlayerScreen(
 
     LaunchedEffect(state.message) {
         if (state.message != null) {
-            kotlinx.coroutines.delay(3500)
+            kotlinx.coroutines.delay(5000)
             viewModel.clearMessage()
         }
     }
@@ -202,21 +202,41 @@ fun PlayerScreen(
         }
 
         Spacer(Modifier.height(20.dp))
-        SectionLabel("Главы · ${state.chapters.size}")
+        SectionLabel(
+            if (state.sourceMode == SourceMode.OFFLINE) {
+                "На устройстве · ${state.chapters.size} из ${state.totalChapters}"
+            } else {
+                "Главы · ${state.chapters.size}"
+            }
+        )
         Spacer(Modifier.height(11.dp))
 
-        LazyColumn(
-            modifier = Modifier.weight(1f).navigationBarsPadding(),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(bottom = 18.dp),
-        ) {
-            items(state.chapters, key = { it.chapter.id }) { item ->
-                ChapterRow(
-                    item = item,
-                    onPlay = { viewModel.playChapter(item.chapter.index) },
-                    onDownload = { viewModel.downloadChapter(item.chapter) },
-                    onRemove = { viewModel.removeChapter(item.chapter.id) },
+        if (state.chapters.isEmpty() && state.sourceMode == SourceMode.OFFLINE) {
+            Box(Modifier.weight(1f).navigationBarsPadding(), contentAlignment = Alignment.TopStart) {
+                Text(
+                    "Здесь пока пусто: ни одна глава не скачана. Переключитесь на «Онлайн», " +
+                        "нажмите стрелку загрузки в шапке — и главы появятся в этом списке. " +
+                        "После этого в «Офлайн» книга играет полностью без сети.",
+                    color = c.inkMuted,
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(top = 8.dp),
                 )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).navigationBarsPadding(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                contentPadding = PaddingValues(bottom = 18.dp),
+            ) {
+                items(state.chapters, key = { it.chapter.id }) { item ->
+                    ChapterRow(
+                        item = item,
+                        onPlay = { viewModel.playChapter(item.chapter) },
+                        onDownload = { viewModel.downloadChapter(item.chapter) },
+                        onRemove = { viewModel.removeChapter(item.chapter.id) },
+                    )
+                }
             }
         }
 

@@ -3,6 +3,7 @@ package ua.starky.audiokniga.ui.search
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +20,9 @@ data class SearchUiState(
     val error: String? = null,
     /** Источники, которые не ответили. Показываются рядом с результатами, а не вместо них. */
     val problems: List<String> = emptyList(),
+    /** Сколько источников уже ответило и сколько всего опрошено. */
+    val answered: Int = 0,
+    val askedSources: Int = 0,
     val searched: Boolean = false,
     val opening: Boolean = false,
 )
@@ -29,44 +33,63 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     private val _state = MutableStateFlow(SearchUiState())
     val state: StateFlow<SearchUiState> = _state.asStateFlow()
 
-    private var job: Job? = null
+    /**
+     * Две независимые задачи. Раньше была одна, и `search()`, вызванный из отложенной
+     * задачи, первым делом отменял её же — то есть сам себя. Поиск не доходил до сети,
+     * а пользователь видел «StandaloneCoroutine was cancelled» вместо результатов.
+     */
+    private var debounce: Job? = null
+    private var searching: Job? = null
 
     fun onQueryChange(query: String) {
         _state.value = _state.value.copy(query = query)
-        job?.cancel()
-        if (query.trim().length < 3) return
-        job = viewModelScope.launch {
-            delay(450) // не дёргаем источники на каждую букву
+        debounce?.cancel()
+        if (query.trim().length < MIN_QUERY) return
+        debounce = viewModelScope.launch {
+            delay(500) // не дёргаем источники на каждую букву
             search()
         }
     }
 
     fun search() {
-        job?.cancel()
         val query = _state.value.query.trim()
         if (query.isEmpty()) return
-        job = viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
-            runCatching { repo.search(query) }
-                .onSuccess { outcome ->
+        debounce?.cancel()
+        searching?.cancel()
+
+        searching = viewModelScope.launch {
+            _state.value = _state.value.copy(
+                loading = true,
+                error = null,
+                problems = emptyList(),
+                answered = 0,
+                askedSources = 0,
+                results = emptyList(),
+            )
+            try {
+                // Источники отвечают с разной скоростью, поэтому результаты
+                // показываются по мере поступления, а не после самого медленного.
+                repo.search(query).collect { progress ->
                     _state.value = _state.value.copy(
-                        results = outcome.results,
-                        problems = outcome.problems,
-                        loading = false,
-                        searched = true,
-                        // Пусто и при этом никто не ответил — это не «не нашлось», а сбой связи.
-                        error = if (outcome.results.isEmpty() && outcome.problems.size == outcome.askedSources) {
-                            "Ни один источник не ответил"
-                        } else null,
+                        results = progress.results,
+                        problems = progress.problems,
+                        answered = progress.answered,
+                        askedSources = progress.askedSources,
+                        loading = !progress.finished,
+                        searched = progress.finished,
+                        error = progress.summaryError(),
                     )
                 }
-                .onFailure { error ->
-                    _state.value = _state.value.copy(
-                        loading = false,
-                        searched = true,
-                        error = error.message ?: "Источники не ответили",
-                    )
-                }
+            } catch (e: CancellationException) {
+                // Пользователь набрал что-то ещё — это не ошибка, показывать нечего.
+                throw e
+            } catch (e: Throwable) {
+                _state.value = _state.value.copy(
+                    loading = false,
+                    searched = true,
+                    error = e.message ?: "Источники не ответили",
+                )
+            }
         }
     }
 
@@ -74,21 +97,26 @@ class SearchViewModel(application: Application) : AndroidViewModel(application) 
     fun addToLibrary(bookId: String, onDone: (String) -> Unit) {
         viewModelScope.launch {
             _state.value = _state.value.copy(opening = true, error = null)
-            runCatching { repo.addToLibrary(bookId) }
-                .onSuccess {
-                    _state.value = _state.value.copy(opening = false)
-                    onDone(bookId)
-                }
-                .onFailure { error ->
-                    _state.value = _state.value.copy(
-                        opening = false,
-                        error = error.message ?: "Не удалось открыть книгу",
-                    )
-                }
+            try {
+                repo.addToLibrary(bookId)
+                _state.value = _state.value.copy(opening = false)
+                onDone(bookId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                _state.value = _state.value.copy(
+                    opening = false,
+                    error = e.message ?: "Не удалось открыть книгу",
+                )
+            }
         }
     }
 
     fun clearError() {
         _state.value = _state.value.copy(error = null)
+    }
+
+    private companion object {
+        const val MIN_QUERY = 3
     }
 }

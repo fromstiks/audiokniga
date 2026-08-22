@@ -1,11 +1,14 @@
 package ua.starky.audiokniga.data.repo
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.joinAll
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -25,14 +28,25 @@ import ua.starky.audiokniga.data.provider.RssProvider
 import java.util.UUID
 
 /**
- * Что вернул опрос источников. Помимо находок несёт список тех, кто не ответил,
- * — без него пустой экран ничего не объясняет.
+ * Ход поиска. Источники отвечают вразнобой, поэтому состояние отдаётся порциями:
+ * список растёт по мере ответов, а счётчик показывает, сколько ещё ждать.
  */
-data class SearchOutcome(
+data class SearchProgress(
     val results: List<SearchResult> = emptyList(),
     val problems: List<String> = emptyList(),
+    val answered: Int = 0,
     val askedSources: Int = 0,
-)
+) {
+    val finished: Boolean get() = answered >= askedSources
+
+    /** Сообщение на весь экран показываем только когда искать было негде или никто не ответил. */
+    fun summaryError(): String? = when {
+        !finished || results.isNotEmpty() -> null
+        askedSources == 0 -> "Нет ни одного включённого источника"
+        problems.size == askedSources -> "Ни один источник не ответил"
+        else -> null
+    }
+}
 
 class LibraryRepository(context: Context) {
 
@@ -55,14 +69,17 @@ class LibraryRepository(context: Context) {
         combine(observeBook(bookId), observeChapters(bookId)) { book, list -> book to list }
 
     /**
-     * Опрашивает все подходящие источники разом.
+     * Опрашивает все подходящие источники параллельно и отдаёт результат порциями.
      *
      * Ошибки не проглатываются: если источник не ответил, это видно на экране —
-     * иначе «ничего не нашлось» и «нет интернета» выглядят одинаково.
+     * иначе «нет сети» и «ничего не нашлось» выглядят одинаково.
      */
-    suspend fun search(query: String): SearchOutcome = withContext(Dispatchers.IO) {
+    fun search(query: String): Flow<SearchProgress> = channelFlow {
         val trimmed = query.trim()
-        if (trimmed.isEmpty()) return@withContext SearchOutcome()
+        if (trimmed.isEmpty()) {
+            send(SearchProgress())
+            return@channelFlow
+        }
 
         // Ссылку разбираем как ленту, слово отправляем во все поисковые источники.
         val providers = if (trimmed.startsWith("http", ignoreCase = true)) {
@@ -71,27 +88,36 @@ class LibraryRepository(context: Context) {
             ProviderRegistry.searchable
         }
 
-        val answers = coroutineScope {
-            providers.map { provider ->
-                async {
-                    provider to runCatching { provider.search(trimmed) }
-                }
-            }.awaitAll()
-        }
-
-        val results = mutableListOf<SearchResult>()
+        val seen = LinkedHashMap<String, SearchResult>()
         val problems = mutableListOf<String>()
-        for ((provider, outcome) in answers) {
-            outcome
-                .onSuccess { results += it }
-                .onFailure { problems += "${provider.displayName} ${it.readableMessage()}" }
-        }
+        var answered = 0
+        val guard = Mutex()
 
-        SearchOutcome(
-            results = results.distinctBy { it.book.id },
-            problems = problems,
-            askedSources = providers.size,
-        )
+        send(SearchProgress(askedSources = providers.size))
+
+        providers.map { provider ->
+            launch(Dispatchers.IO) {
+                val outcome = runCatching { provider.search(trimmed) }
+                guard.withLock {
+                    outcome
+                        .onSuccess { found -> found.forEach { seen.putIfAbsent(it.book.id, it) } }
+                        .onFailure { error ->
+                            // Отмену показывать нельзя: это наш собственный новый запрос.
+                            if (error is CancellationException) throw error
+                            problems += "${provider.displayName} ${error.readableMessage()}"
+                        }
+                    answered++
+                    send(
+                        SearchProgress(
+                            results = seen.values.toList(),
+                            problems = problems.toList(),
+                            answered = answered,
+                            askedSources = providers.size,
+                        )
+                    )
+                }
+            }
+        }.joinAll()
     }
 
     private fun Throwable.readableMessage(): String =

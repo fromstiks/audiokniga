@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -63,7 +64,7 @@ fun SearchScreen(
     ) {
         SectionHeader(
             title = "Поиск книг",
-            subtitle = "${ProviderRegistry.searchable.size} источников",
+            subtitle = sourcesLabel(ProviderRegistry.searchable.size),
             onOpenDrawer = onOpenDrawer,
         )
 
@@ -102,13 +103,15 @@ fun SearchScreen(
                     inner()
                 },
             )
-            if (state.loading || state.opening) {
-                CircularProgressIndicator(
-                    color = c.accent,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
+        }
+
+        if (state.loading || state.opening) {
+            Spacer(Modifier.height(12.dp))
+            SearchProgressBar(
+                answered = state.answered,
+                total = state.askedSources,
+                opening = state.opening,
+            )
         }
 
         Spacer(Modifier.height(14.dp))
@@ -118,7 +121,10 @@ fun SearchScreen(
                 state.results.isEmpty() && state.error != null -> Hint(state.error!!, isError = true)
 
                 state.results.isEmpty() && state.searched && !state.loading ->
-                    Hint("Ничего не нашлось. Попробуйте другое написание, имя автора или язык оригинала.")
+                    Hint(
+                        "Ничего не нашлось. Попробуйте одно слово вместо нескольких, " +
+                            "имя автора или название на языке оригинала."
+                    )
 
                 state.results.isEmpty() && !state.loading -> Hint(
                     "Ищем сразу по всем подключённым источникам: Internet Archive, LibriVox, " +
@@ -197,6 +203,70 @@ fun SearchScreen(
             }
         }
     }
+}
+
+/**
+ * Видимый ход поиска: сколько источников уже ответило. Раньше о том, идёт ли поиск,
+ * можно было только догадываться.
+ */
+@Composable
+private fun SearchProgressBar(answered: Int, total: Int, opening: Boolean) {
+    val c = Neu.colors
+    val progress = if (total > 0) answered.toFloat() / total else 0f
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .neuSunken(RoundedCornerShape(15.dp), depth = 2.5.dp)
+            .padding(horizontal = 13.dp, vertical = 11.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+            CircularProgressIndicator(
+                color = c.accent,
+                strokeWidth = 2.dp,
+                modifier = Modifier.size(14.dp),
+            )
+            Text(
+                text = when {
+                    opening -> "Открываем книгу…"
+                    total > 0 -> "Ищем в источниках · $answered из $total"
+                    else -> "Ищем…"
+                },
+                color = c.inkMuted,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        if (!opening && total > 0) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(percent = 50))
+                    .background(c.line)
+            ) {
+                Box(
+                    Modifier
+                        .fillMaxHeight()
+                        .fillMaxWidth(progress.coerceIn(0f, 1f))
+                        .clip(RoundedCornerShape(percent = 50))
+                        .background(c.accent)
+                )
+            }
+        }
+    }
+}
+
+private fun sourcesLabel(count: Int): String {
+    val mod100 = count % 100
+    val mod10 = count % 10
+    val word = when {
+        mod100 in 11..14 -> "источников"
+        mod10 == 1 -> "источник"
+        mod10 in 2..4 -> "источника"
+        else -> "источников"
+    }
+    return "$count $word"
 }
 
 /** Кто из источников промолчал. Полезно, когда результат есть, но неполный. */

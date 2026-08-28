@@ -137,11 +137,18 @@ class PlaybackController(
         }
     }
 
-    /** Нажатие play там, где книга ещё не загружена в плеер, — например в свёрнутом плеере. */
+    /**
+     * Нажатие play там, где книга ещё не загружена в плеер, — например в свёрнутом плеере.
+     * Сбой здесь нельзя терять: кнопка просто «не работала бы», а причина не доехала бы
+     * ни до экрана, ни до пользователя.
+     */
     fun playPause(bookId: String? = null) {
         val target = bookId ?: _openBookId.value
         if (target != null && queuedBookId != target) {
-            scope.launch { open(target, play = true) }
+            scope.launch {
+                runCatching { open(target, play = true) }
+                    .onFailure { _notice.value = it.message ?: "Не удалось открыть книгу" }
+            }
         } else {
             connection.playPause()
         }

@@ -1,6 +1,7 @@
 package ua.starky.audiokniga.ui
 
 import android.app.Application
+import android.util.Base64
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
@@ -14,8 +15,6 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import java.net.URLDecoder
-import java.net.URLEncoder
 import ua.starky.audiokniga.ui.library.LibraryScreen
 import ua.starky.audiokniga.ui.library.LibraryViewModel
 import ua.starky.audiokniga.ui.player.PlayerScreen
@@ -32,7 +31,29 @@ object Routes {
     const val SOURCES = "sources"
     const val SETTINGS = "settings"
     const val PLAYER = "player/{bookId}"
-    fun player(bookId: String): String = "player/" + URLEncoder.encode(bookId, "UTF-8")
+
+    /**
+     * Идентификатор книги едет в адресе экрана, а он же адрес URI — и это ловушка.
+     *
+     * У книги с устройства id выглядит как `local:content://…/tree/primary%3AKnigi%2FАвтор`,
+     * и процентные последовательности внутри него значимы. Обычное кодирование не спасает:
+     * Navigation декодирует аргумент сам, наш код декодировал бы второй раз, и `%3A`
+     * превратилось бы в живое двоеточие — книга по такому id уже не находится. У лент и
+     * подкастов id тоже со слэшами, так что беда общая.
+     *
+     * Base64 в url-safe виде решает это начисто: в нём нет ни слэшей, ни процентов,
+     * ни плюсов, поэтому декодировать его может только тот, кто знает, что это Base64.
+     */
+    fun player(bookId: String): String = "player/" + encodeArgument(bookId)
+
+    fun encodeArgument(value: String): String = Base64.encodeToString(
+        value.toByteArray(Charsets.UTF_8),
+        Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING,
+    )
+
+    fun decodeArgument(value: String): String = runCatching {
+        String(Base64.decode(value, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING), Charsets.UTF_8)
+    }.getOrDefault(value)
 }
 
 @Composable
@@ -88,7 +109,7 @@ fun AppNavigation() {
             route = Routes.PLAYER,
             arguments = listOf(navArgument("bookId") { type = NavType.StringType }),
         ) { entry ->
-            val bookId = URLDecoder.decode(entry.arguments?.getString("bookId").orEmpty(), "UTF-8")
+            val bookId = Routes.decodeArgument(entry.arguments?.getString("bookId").orEmpty())
             val vm: PlayerViewModel = viewModel(
                 key = bookId,
                 factory = object : ViewModelProvider.Factory {

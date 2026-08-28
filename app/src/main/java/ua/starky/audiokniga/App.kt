@@ -1,6 +1,8 @@
 package ua.starky.audiokniga
 
 import android.app.Application
+import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,7 +28,15 @@ class App : Application() {
     lateinit var playback: PlaybackController
         private set
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    /**
+     * Необработанный сбой в фоновой задаче обрушил бы приложение целиком: SupervisorJob
+     * спасает соседние задачи, но не процесс. Логируем и живём дальше.
+     */
+    private val errors = CoroutineExceptionHandler { _, error ->
+        Log.e("Audiokniga", "Фоновая задача завершилась ошибкой", error)
+    }
+
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate + errors)
 
     override fun onCreate() {
         super.onCreate()

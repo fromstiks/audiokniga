@@ -12,11 +12,14 @@ import kotlinx.coroutines.launch
 import ua.starky.audiokniga.app
 import ua.starky.audiokniga.data.model.Book
 import ua.starky.audiokniga.data.model.Chapter
+import ua.starky.audiokniga.data.model.ChapterOrder
 import ua.starky.audiokniga.data.model.ChapterUi
 import ua.starky.audiokniga.data.model.DownloadState
 import ua.starky.audiokniga.data.model.Playlist
 import ua.starky.audiokniga.data.model.SourceMode
+import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.download.DownloadInfo
+import ua.starky.audiokniga.playback.isOnDeviceUrl
 import ua.starky.audiokniga.playback.PlaybackState
 import ua.starky.audiokniga.settings.SettingsStore
 
@@ -29,6 +32,9 @@ data class PlayerUiState(
     /** Сколько глав в книге всего — в офлайне список короче, и это нужно объяснить. */
     val totalChapters: Int = 0,
     val skipSeconds: Int = SettingsStore.DEFAULT_SKIP_SECONDS,
+    val chapterOrder: ChapterOrder = ChapterOrder.AS_IS,
+    /** Книга с самого устройства: сеть ей не нужна, скачивать нечего. */
+    val isLocal: Boolean = false,
     val loading: Boolean = true,
     /** Книга не открылась совсем — экран должен объяснить, почему, а не остаться пустым. */
     val failure: String? = null,
@@ -58,17 +64,25 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
         repo.observeSourceMode(bookId),
         playback.state,
         downloadInfo,
-        combine(loading, failure, message, playback.notice, settings.skipSeconds) { l, f, m, notice, skip ->
-            Screen(l, f, m ?: notice, skip)
-        },
+        combine(
+            loading,
+            failure,
+            combine(message, playback.notice) { m, notice -> m ?: notice },
+            settings.skipSeconds,
+            repo.observeChapterOrder(bookId),
+        ) { l, f, text, skip, order -> Screen(l, f, text, skip, order) },
     ) { bookAndChapters, mode, playbackState, info, screen ->
         val (book, chapters) = bookAndChapters
-        // В режиме «Офлайн» на экране остаётся ровно то, что лежит на устройстве:
-        // иначе обе вкладки выглядят одинаково и обещают то, чего офлайн не даёт.
+        val ordered = ChapterOrder.sort(chapters, screen.order)
+        // В режиме «Офлайн» на экране остаётся ровно то, что лежит на устройстве.
+        // Файл, выбранный с самого телефона, тоже лежит на устройстве — фильтровать
+        // его по кэшу загрузок было ошибкой: список получался пустым.
         val visible = if (mode == SourceMode.OFFLINE) {
-            chapters.filter { info[it.id]?.state == DownloadState.DOWNLOADED }
+            ordered.filter {
+                it.audioUrl.isOnDeviceUrl() || info[it.id]?.state == DownloadState.DOWNLOADED
+            }
         } else {
-            chapters
+            ordered
         }
         PlayerUiState(
             book = book,
@@ -78,6 +92,8 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
             downloadedCount = chapters.count { info[it.id]?.state == DownloadState.DOWNLOADED },
             totalChapters = chapters.size,
             skipSeconds = screen.skipSeconds,
+            chapterOrder = screen.order,
+            isLocal = book?.providerId == ProviderRegistry.LOCAL_ID,
             loading = screen.loading && book == null,
             failure = screen.failure.takeIf { book == null },
             message = screen.message ?: playbackState.error,
@@ -89,6 +105,7 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
         val failure: String?,
         val message: String?,
         val skipSeconds: Int,
+        val order: ChapterOrder,
     )
 
     /**
@@ -117,6 +134,16 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
         viewModelScope.launch {
             repo.setFavorite(bookId, !book.favorite)
             message.value = if (book.favorite) "Убрано из избранного" else "Добавлено в избранное"
+        }
+    }
+
+    /** Единственно верного порядка глав не бывает, поэтому его выбирает человек. */
+    fun cycleChapterOrder() {
+        viewModelScope.launch {
+            val next = repo.chapterOrderOf(bookId).next()
+            repo.setChapterOrder(bookId, next)
+            runCatching { playback.rebuildQueue(bookId) }
+            message.value = "Порядок глав: ${next.label}"
         }
     }
 

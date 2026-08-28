@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import ua.starky.audiokniga.data.model.Chapter
+import ua.starky.audiokniga.data.model.ChapterOrder
 import ua.starky.audiokniga.data.model.DownloadState
 import ua.starky.audiokniga.data.model.SourceMode
 import ua.starky.audiokniga.data.repo.LibraryRepository
@@ -86,6 +87,14 @@ class PlaybackController(
         }
     }
 
+    /** Пересобрать очередь под текущие настройки книги, сохранив место в ней. */
+    suspend fun rebuildQueue(bookId: String) {
+        ready.await()
+        queueLock.withLock {
+            fillQueue(bookId, repo.sourceModeOf(bookId), play = state.value.isPlaying, keepPosition = true)
+        }
+    }
+
     private suspend fun fillQueue(bookId: String, mode: SourceMode, play: Boolean, keepPosition: Boolean) {
         val chapters = queueFor(bookId, mode)
 
@@ -129,7 +138,8 @@ class PlaybackController(
      * последний и так локальный, фильтровать его по кэшу загрузок бессмысленно.
      */
     private suspend fun queueFor(bookId: String, mode: SourceMode): List<Chapter> {
-        val all = repo.ensureLoaded(bookId)
+        // Очередь обязана совпадать с тем, что человек видит на экране.
+        val all = ChapterOrder.sort(repo.ensureLoaded(bookId), repo.chapterOrderOf(bookId))
         if (mode != SourceMode.OFFLINE) return all
         val downloaded = downloads.snapshotAsync()
         return all.filter {

@@ -241,4 +241,14 @@ object AppIcons {
         arcToRelative(2.2f, 2f, 0f, true, true, -4.4f, 0f)
         arcToRelative(2.2f, 2f, 0f, true, true, 4.4f, 0f)
     }
+
+    /** Сортировка: строки разной длины со стрелкой. */
+    val Sort: ImageVector = stroked("Sort") {
+        moveTo(4f, 7f); horizontalLineTo(14f)
+        moveTo(4f, 12f); horizontalLineTo(11f)
+        moveTo(4f, 17f); horizontalLineTo(8f)
+        moveTo(17f, 6f); verticalLineTo(18f)
+        moveTo(17f, 18f); lineTo(20f, 15f)
+        moveTo(17f, 18f); lineTo(14f, 15f)
+    }
 }

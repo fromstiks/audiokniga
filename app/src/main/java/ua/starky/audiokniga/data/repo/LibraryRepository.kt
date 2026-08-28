@@ -18,6 +18,7 @@ import ua.starky.audiokniga.data.db.ChapterEntity
 import ua.starky.audiokniga.data.model.Book
 import ua.starky.audiokniga.data.model.BookDetails
 import ua.starky.audiokniga.data.model.Chapter
+import ua.starky.audiokniga.data.model.ChapterOrder
 import ua.starky.audiokniga.data.model.SearchResult
 import ua.starky.audiokniga.data.model.SourceMode
 import ua.starky.audiokniga.data.db.CustomSourceEntity
@@ -78,6 +79,16 @@ class LibraryRepository(context: Context) {
     fun observeLibrary(): Flow<List<Book>> = books.observeLibrary().map { list -> list.map { it.toBook() } }
 
     fun observeBook(bookId: String): Flow<Book?> = books.observeBook(bookId).map { it?.toBook() }
+
+    fun observeChapterOrder(bookId: String): Flow<ChapterOrder> =
+        books.observeBook(bookId).map { ChapterOrder.fromOrdinal(it?.chapterOrder ?: 0) }
+
+    suspend fun chapterOrderOf(bookId: String): ChapterOrder = withContext(Dispatchers.IO) {
+        ChapterOrder.fromOrdinal(books.getBook(bookId)?.chapterOrder ?: 0)
+    }
+
+    suspend fun setChapterOrder(bookId: String, order: ChapterOrder) =
+        books.setChapterOrder(bookId, order.ordinal)
 
     fun observeSourceMode(bookId: String): Flow<SourceMode> =
         books.observeBook(bookId).map { SourceMode.fromOrdinalOrAuto(it?.sourceMode ?: 0) }
@@ -166,8 +177,9 @@ class LibraryRepository(context: Context) {
                 lastOpenedAt = now,
                 lastChapterIndex = existing?.lastChapterIndex ?: 0,
                 lastPositionMs = existing?.lastPositionMs ?: 0L,
-                // Повторное открытие книги не должно снимать звёздочку.
+                // Повторное открытие книги не должно снимать звёздочку и сбивать порядок.
                 favorite = existing?.favorite ?: false,
+                chapterOrder = existing?.chapterOrder ?: 0,
             )
         )
         chapters.replaceForBook(

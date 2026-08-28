@@ -118,13 +118,15 @@ fun PlayerScreen(
                 size = 36.dp,
                 tint = if (state.playback.speed > 1.01f) c.accent else null,
             )
-            NeuIconButton(
-                AppIcons.Download,
-                "Скачать все главы",
-                viewModel::downloadAll,
-                size = 36.dp,
-                iconSize = 14.dp,
-            )
+            if (!state.isLocal) {
+                NeuIconButton(
+                    AppIcons.Download,
+                    "Скачать все главы",
+                    viewModel::downloadAll,
+                    size = 36.dp,
+                    iconSize = 14.dp,
+                )
+            }
         }
 
         when {
@@ -142,9 +144,13 @@ fun PlayerScreen(
         }
 
         // ——— выбор источника ———
-        SourceSwitch(mode = state.sourceMode, onSelect = viewModel::setSourceMode)
-
-        Spacer(Modifier.height(18.dp))
+        // Книге с устройства выбирать не из чего: сеть ей не нужна вовсе.
+        if (!state.isLocal) {
+            SourceSwitch(mode = state.sourceMode, onSelect = viewModel::setSourceMode)
+            Spacer(Modifier.height(18.dp))
+        } else {
+            Spacer(Modifier.height(4.dp))
+        }
 
         // ——— книга ———
         Row(horizontalArrangement = Arrangement.spacedBy(15.dp)) {
@@ -179,8 +185,9 @@ fun PlayerScreen(
                     letterSpacing = 1.1.sp,
                 )
                 Text(
-                    text = downloadedLabel(state.downloadedCount, state.chapters.size),
-                    color = if (state.downloadedCount > 0) c.offline else c.inkFaint,
+                    text = if (state.isLocal) "Играет с устройства, без сети"
+                    else downloadedLabel(state.downloadedCount, state.chapters.size),
+                    color = if (state.isLocal || state.downloadedCount > 0) c.offline else c.inkFaint,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.8.sp,
@@ -230,13 +237,37 @@ fun PlayerScreen(
         }
 
         Spacer(Modifier.height(20.dp))
-        SectionLabel(
-            if (state.sourceMode == SourceMode.OFFLINE) {
-                "На устройстве · ${state.chapters.size} из ${state.totalChapters}"
-            } else {
-                "Главы · ${state.chapters.size}"
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(Modifier.weight(1f)) {
+                SectionLabel(
+                    if (!state.isLocal && state.sourceMode == SourceMode.OFFLINE) {
+                        "На устройстве · ${state.chapters.size} из ${state.totalChapters}"
+                    } else {
+                        "Главы · ${state.chapters.size}"
+                    }
+                )
             }
-        )
+            Row(
+                Modifier
+                    .neuRaised(RoundedCornerShape(percent = 50), elevation = 3.dp)
+                    .clickable(onClick = viewModel::cycleChapterOrder)
+                    .padding(horizontal = 11.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(AppIcons.Sort, "Изменить порядок глав", tint = c.inkMuted, modifier = Modifier.size(12.dp))
+                Text(
+                    state.chapterOrder.label,
+                    color = c.inkMuted,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
         Spacer(Modifier.height(11.dp))
 
         if (state.chapters.isEmpty() && state.sourceMode == SourceMode.OFFLINE) {
@@ -260,6 +291,7 @@ fun PlayerScreen(
                 items(state.chapters, key = { it.chapter.id }) { item ->
                     ChapterRow(
                         item = item,
+                        local = state.isLocal,
                         onPlay = { viewModel.playChapter(item.chapter) },
                         onDownload = { viewModel.downloadChapter(item.chapter) },
                         onRemove = { viewModel.removeChapter(item.chapter.id) },
@@ -471,6 +503,7 @@ private fun SourceSwitch(mode: SourceMode, onSelect: (SourceMode) -> Unit) {
 @Composable
 private fun ChapterRow(
     item: ChapterUi,
+    local: Boolean,
     onPlay: () -> Unit,
     onDownload: () -> Unit,
     onRemove: () -> Unit,
@@ -511,6 +544,17 @@ private fun ChapterRow(
             fontSize = 10.5.sp,
             fontWeight = FontWeight.Bold,
         )
+
+        if (local) {
+            // Файл и так на устройстве — предлагать его скачать было бы враньём.
+            Icon(
+                AppIcons.Offline,
+                "На устройстве",
+                tint = c.offline,
+                modifier = Modifier.size(15.dp),
+            )
+            return@Row
+        }
 
         when (item.downloadState) {
             DownloadState.DOWNLOADED -> Icon(

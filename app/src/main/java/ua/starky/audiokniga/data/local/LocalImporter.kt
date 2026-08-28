@@ -109,19 +109,35 @@ object LocalImporter {
         sourceUrl: String,
         items: List<Pair<Uri, String>>,
     ): BookDetails {
+        // Один и тот же файл не должен попасть в книгу дважды.
+        val unique = items.distinctBy { it.first.toString() }
+
         var album: String? = null
         var artist: String? = null
 
-        val chapters = items.mapIndexed { index, (uri, name) ->
+        val read = unique.map { (uri, name) ->
             val tags = readTags(context, uri)
             if (album == null) album = tags.album
             if (artist == null) artist = tags.artist
+            Triple(uri, name, tags)
+        }
+
+        // У переписанных сборок теги глав сплошь и рядом одинаковые: половина файлов
+        // подписана «Глава_16». Тогда названия из тегов бесполезны — берём имена файлов,
+        // они хотя бы совпадают с порядком, в котором главы лежат.
+        val tagTitles = read.mapNotNull { it.third.title?.takeIf { title -> title.isNotBlank() } }
+        val tagsAreUsable = tagTitles.size == read.size &&
+            tagTitles.distinct().size == tagTitles.size
+
+        val chapters = read.mapIndexed { index, (uri, name, tags) ->
+            val fromFile = name.substringBeforeLast('.').cleanUp()
             Chapter(
                 id = "$bookId#$index",
                 bookId = bookId,
                 index = index,
-                title = tags.title?.takeIf { it.isNotBlank() }
-                    ?: name.substringBeforeLast('.').cleanUp().ifBlank { "Часть ${index + 1}" },
+                title = (if (tagsAreUsable) tags.title else null)
+                    ?.takeIf { it.isNotBlank() }
+                    ?: fromFile.ifBlank { "Часть ${index + 1}" },
                 audioUrl = uri.toString(),
                 durationMs = tags.durationMs,
             )

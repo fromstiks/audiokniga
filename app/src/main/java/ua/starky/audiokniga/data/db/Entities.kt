@@ -23,6 +23,8 @@ data class BookEntity(
     val lastChapterIndex: Int,
     val lastPositionMs: Long,
     val favorite: Boolean = false,
+    /** Порядок глав, выбранный для этой книги. Хранится как ordinal ChapterOrder. */
+    val chapterOrder: Int = 0,
 )
 
 @Entity(

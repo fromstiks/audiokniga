@@ -102,3 +102,50 @@ sealed interface ShelfFilter {
     data object Favorites : ShelfFilter
     data class InPlaylist(val playlistId: String) : ShelfFilter
 }
+
+/**
+ * Чем упорядочены главы книги. У файлов с устройства имена и теги часто расходятся,
+ * поэтому единственно верного порядка не существует — выбор остаётся за человеком.
+ */
+enum class ChapterOrder {
+    /** Как отдал источник или как лежат файлы в папке. */
+    AS_IS,
+
+    /** По числу в названии: «Глава_2» перед «Глава_10». */
+    BY_NUMBER,
+
+    /** По названию целиком. */
+    BY_TITLE,
+
+    /** По длительности — помогает выловить дубликаты и обрезки. */
+    BY_DURATION;
+
+    val label: String
+        get() = when (this) {
+            AS_IS -> "Как в папке"
+            BY_NUMBER -> "По номеру"
+            BY_TITLE -> "По названию"
+            BY_DURATION -> "По длительности"
+        }
+
+    fun next(): ChapterOrder = entries[(ordinal + 1) % entries.size]
+
+    companion object {
+        fun fromOrdinal(value: Int): ChapterOrder = entries.getOrElse(value) { AS_IS }
+
+        /** Число внутри названия — то, по чему главы обычно и нумеруют. */
+        private val NUMBER = Regex("\\d+")
+
+        fun sort(chapters: List<Chapter>, order: ChapterOrder): List<Chapter> = when (order) {
+            AS_IS -> chapters
+            BY_NUMBER -> chapters.sortedWith(
+                compareBy({ numberIn(it.title) ?: Long.MAX_VALUE }, { it.title })
+            )
+            BY_TITLE -> chapters.sortedBy { it.title.lowercase() }
+            BY_DURATION -> chapters.sortedBy { it.durationMs }
+        }
+
+        private fun numberIn(title: String): Long? =
+            NUMBER.findAll(title).lastOrNull()?.value?.toLongOrNull()
+    }
+}

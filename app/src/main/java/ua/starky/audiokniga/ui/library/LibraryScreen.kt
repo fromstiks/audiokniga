@@ -1,5 +1,7 @@
 package ua.starky.audiokniga.ui.library
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -69,8 +71,21 @@ fun LibraryScreen(
     val skipSeconds by viewModel.skipSeconds.collectAsStateWithLifecycle()
     val c = Neu.colors
 
+    val message by viewModel.message.collectAsStateWithLifecycle()
+    val importing by viewModel.importing.collectAsStateWithLifecycle()
+
     var creating by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
+
+    // Системный выбор: разрешение на «все файлы» не нужно, доступ даёт сам пользователь.
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let(viewModel::importFolder)
+    }
+    val pickFiles = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) viewModel.importFiles(uris)
+    }
 
     Column(
         Modifier
@@ -85,7 +100,20 @@ fun LibraryScreen(
             subtitle = if (books.isEmpty()) "Пока пусто" else "${books.size} ${plural(books.size)}",
             onOpenDrawer = onOpenDrawer,
             action = {
-                NeuIconButton(AppIcons.Search, "Найти книгу", onOpenSearch, size = 42.dp, iconSize = 17.dp, tint = c.accent)
+                Row(horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+                    NeuIconButton(
+                        icon = AppIcons.Folder,
+                        contentDescription = "Добавить книгу с устройства",
+                        onClick = { pickFolder.launch(null) },
+                        size = 42.dp,
+                        iconSize = 17.dp,
+                        enabled = !importing,
+                    )
+                    NeuIconButton(
+                        AppIcons.Search, "Найти книгу", onOpenSearch,
+                        size = 42.dp, iconSize = 17.dp, tint = c.accent,
+                    )
+                }
             },
         )
 
@@ -114,7 +142,11 @@ fun LibraryScreen(
 
         Box(Modifier.weight(1f)) {
             when {
-                books.isEmpty() && filter is ShelfFilter.All -> EmptyShelf(onOpenSearch = onOpenSearch)
+                books.isEmpty() && filter is ShelfFilter.All -> EmptyShelf(
+                    onOpenSearch = onOpenSearch,
+                    onPickFolder = { pickFolder.launch(null) },
+                    onPickFiles = { pickFiles.launch(arrayOf("audio/*")) },
+                )
 
                 books.isEmpty() -> EmptyFilter(filter = filter, onShowAll = { viewModel.setFilter(ShelfFilter.All) })
 
@@ -138,6 +170,34 @@ fun LibraryScreen(
                         )
                     }
                 }
+            }
+        }
+
+        if (importing || message != null) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .neuSunken(RoundedCornerShape(16.dp), depth = 3.dp)
+                    .clickable { viewModel.clearMessage() }
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (importing) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        color = c.accent,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+                Text(
+                    text = if (importing) "Читаю файлы…" else message.orEmpty(),
+                    color = c.inkMuted,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    lineHeight = 17.sp,
+                )
             }
         }
 
@@ -299,32 +359,57 @@ private fun NewPlaylistField(
 }
 
 @Composable
-private fun EmptyShelf(onOpenSearch: () -> Unit) {
+private fun EmptyShelf(
+    onOpenSearch: () -> Unit,
+    onPickFolder: () -> Unit,
+    onPickFiles: () -> Unit,
+) {
     val c = Neu.colors
     Column(
-        Modifier.fillMaxSize().padding(top = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        Modifier.fillMaxSize().padding(top = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Text("На полке пока пусто", color = c.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
         Text(
-            "Найдите книгу в открытых каталогах — Internet Archive, LibriVox, подкасты. " +
-                "Скачанные главы останутся на устройстве: их можно слушать без сети, " +
-                "переключив источник на «Офлайн».",
+            "Если книги уже лежат на телефоне — добавьте папку с главами. Приложение " +
+                "прочитает теги, расставит главы по порядку и будет помнить, где вы " +
+                "остановились. Сеть для этого не нужна вовсе.",
             color = c.inkMuted,
             fontSize = 13.sp,
             lineHeight = 20.sp,
         )
-        Row(
-            Modifier
-                .neuRaised(RoundedCornerShape(18.dp), elevation = 6.dp)
-                .clickable(onClick = onOpenSearch)
-                .padding(horizontal = 18.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(AppIcons.Search, null, tint = c.accent, modifier = Modifier.size(16.dp))
-            Text("Найти книгу", color = c.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-        }
+        ShelfAction(icon = AppIcons.Folder, label = "Папка с книгой", accent = true, onClick = onPickFolder)
+        ShelfAction(icon = AppIcons.Note, label = "Отдельные файлы", accent = false, onClick = onPickFiles)
+
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Либо поищите в открытых каталогах: Internet Archive, LibriVox, подкасты.",
+            color = c.inkFaint,
+            fontSize = 12.5.sp,
+            lineHeight = 18.sp,
+        )
+        ShelfAction(icon = AppIcons.Search, label = "Найти книгу", accent = false, onClick = onOpenSearch)
+    }
+}
+
+@Composable
+private fun ShelfAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    accent: Boolean,
+    onClick: () -> Unit,
+) {
+    val c = Neu.colors
+    Row(
+        Modifier
+            .neuRaised(RoundedCornerShape(17.dp), elevation = 5.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 17.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Icon(icon, null, tint = if (accent) c.accent else c.inkMuted, modifier = Modifier.size(16.dp))
+        Text(label, color = c.ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
     }
 }
 

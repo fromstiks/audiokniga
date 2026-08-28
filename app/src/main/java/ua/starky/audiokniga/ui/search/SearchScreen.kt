@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.starky.audiokniga.data.provider.ProviderRegistry
+import ua.starky.audiokniga.data.provider.Relevance
 import ua.starky.audiokniga.data.repo.SourceOutcome
 import ua.starky.audiokniga.ui.SectionHeader
 import ua.starky.audiokniga.ui.components.AppIcons
@@ -161,7 +162,12 @@ fun SearchScreen(
                     if (state.selectedSource == null && state.problems.isNotEmpty()) {
                         item { ProblemsNote(state.problems) }
                     }
-                    items(visible, key = { it.book.id }) { result ->
+                    // Точные совпадения сверху, остальное — отдельным блоком ниже,
+                    // чтобы ничего не терялось, но и не мешалось.
+                    val (close, loose) = visible.partition {
+                        Relevance.isClose(it.book, state.query)
+                    }
+                    items(close, key = { it.book.id }) { result ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -206,6 +212,26 @@ fun SearchScreen(
                             }
                         }
                     }
+
+                    if (loose.isNotEmpty()) {
+                        item {
+                            Text(
+                                if (close.isEmpty()) "Точных совпадений нет, но нашлось похожее"
+                                else "Менее точные совпадения",
+                                color = c.inkFaint,
+                                fontSize = 10.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.1.sp,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 2.dp),
+                            )
+                        }
+                        items(loose, key = { it.book.id }) { result ->
+                            LooseResult(
+                                result = result,
+                                onOpen = { viewModel.addToLibrary(result.book.id, onOpenBook) },
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -222,6 +248,48 @@ fun SearchScreen(
             ) {
                 Text(state.error!!, color = c.inkMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
             }
+        }
+    }
+}
+
+/** Совпадение «где-то рядом»: показываем тише, чтобы не спорило с точными. */
+@Composable
+private fun LooseResult(
+    result: ua.starky.audiokniga.data.model.SearchResult,
+    onOpen: () -> Unit,
+) {
+    val c = Neu.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .neuRaised(RoundedCornerShape(16.dp), elevation = 3.dp)
+            .clickable(onClick = onOpen)
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BookCover(
+            title = result.book.title,
+            coverUrl = result.book.coverUrl,
+            modifier = Modifier.size(42.dp).clip(RoundedCornerShape(11.dp)),
+            fontSize = 6,
+        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                result.book.title,
+                color = c.inkMuted,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                ProviderRegistry.displayName(result.book.providerId),
+                color = c.inkFaint,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp,
+            )
         }
     }
 }

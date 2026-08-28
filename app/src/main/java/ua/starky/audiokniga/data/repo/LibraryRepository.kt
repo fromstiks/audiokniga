@@ -186,6 +186,12 @@ class LibraryRepository(context: Context) {
         )
     }
 
+    /** Кладёт на полку книгу, собранную из файлов на устройстве. */
+    suspend fun importLocal(details: BookDetails): String = withContext(Dispatchers.IO) {
+        store(details)
+        details.book.id
+    }
+
     suspend fun ensureLoaded(bookId: String): List<Chapter> = withContext(Dispatchers.IO) {
         val stored = chapters.getChapters(bookId)
         if (stored.isNotEmpty()) stored.map { it.toChapter() }

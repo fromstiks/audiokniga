@@ -65,7 +65,12 @@ object ProviderRegistry {
 
     fun forBook(bookId: String): AudiobookProvider = byId(providerIdOf(bookId))
 
-    fun displayName(providerId: String): String =
-        all.firstOrNull { it.id == providerId }?.displayName
+    fun displayName(providerId: String): String = when {
+        providerId == LOCAL_ID -> "С устройства"
+        else -> all.firstOrNull { it.id == providerId }?.displayName
             ?: if (CustomProvider.isCustom(providerId)) "Свой источник" else providerId
+    }
+
+    /** Книги с самого телефона провайдера не имеют: их главы уже лежат в базе. */
+    const val LOCAL_ID = "local"
 }

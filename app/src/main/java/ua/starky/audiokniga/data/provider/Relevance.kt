@@ -51,13 +51,23 @@ object Relevance {
         return score
     }
 
-    /** Отбрасывает мусор и ставит вперёд то, что ближе к запросу. */
+    /**
+     * Ставит вперёд то, что ближе к запросу.
+     *
+     * Ничего не выбрасывает намеренно: отбор по ключевому слову резал и живые находки —
+     * название на сайте часто не совпадает с запросом дословно. Пусть лучше внизу
+     * списка будет лишнее, чем пропадёт нужное.
+     */
     fun rank(results: List<SearchResult>, query: String): List<SearchResult> {
         val words = words(query)
         if (words.isEmpty()) return results
-        return results
-            .filter { keep(it.book, words) }
-            .sortedByDescending { score(it.book, query, words) }
+        return results.sortedByDescending { score(it.book, query, words) }
+    }
+
+    /** Похоже ли на то, что искали, — по этому признаку список делится на две части. */
+    fun isClose(book: Book, query: String): Boolean {
+        val words = words(query)
+        return words.isNotEmpty() && keep(book, words)
     }
 
     private fun Book.haystack(): String = (title + " " + author).lowercase()

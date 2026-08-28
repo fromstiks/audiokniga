@@ -215,4 +215,30 @@ object AppIcons {
         arcToRelative(2f, 2f, 0f, true, true, 0f, 4f)
         moveTo(19f, 17f); verticalLineTo(9.5f); lineTo(21.5f, 10.5f)
     }
+
+    /** Папка — книга, лежащая на самом устройстве. */
+    val Folder: ImageVector = stroked("Folder") {
+        moveTo(3f, 7f)
+        arcToRelative(2f, 2f, 0f, false, true, 2f, -2f)
+        horizontalLineTo(9.5f)
+        lineTo(11.5f, 7.5f)
+        horizontalLineTo(19f)
+        arcToRelative(2f, 2f, 0f, false, true, 2f, 2f)
+        verticalLineTo(17f)
+        arcToRelative(2f, 2f, 0f, false, true, -2f, 2f)
+        horizontalLineTo(5f)
+        arcToRelative(2f, 2f, 0f, false, true, -2f, -2f)
+        close()
+    }
+
+    /** Нота — отдельные аудиофайлы. */
+    val Note: ImageVector = stroked("Note") {
+        moveTo(9f, 18f); verticalLineTo(6f); lineTo(19f, 4f); verticalLineTo(16f)
+        moveTo(9f, 18f)
+        arcToRelative(2.2f, 2f, 0f, true, true, -4.4f, 0f)
+        arcToRelative(2.2f, 2f, 0f, true, true, 4.4f, 0f)
+        moveTo(19f, 16f)
+        arcToRelative(2.2f, 2f, 0f, true, true, -4.4f, 0f)
+        arcToRelative(2.2f, 2f, 0f, true, true, 4.4f, 0f)
+    }
 }

@@ -123,12 +123,18 @@ class PlaybackController(
         _notice.value = null
     }
 
-    /** В офлайне в очередь попадает только то, что действительно лежит на устройстве. */
+    /**
+     * В офлайне в очередь попадает только то, что действительно лежит на устройстве:
+     * скачанное загрузчиком либо файл, выбранный пользователем с самого телефона —
+     * последний и так локальный, фильтровать его по кэшу загрузок бессмысленно.
+     */
     private suspend fun queueFor(bookId: String, mode: SourceMode): List<Chapter> {
         val all = repo.ensureLoaded(bookId)
         if (mode != SourceMode.OFFLINE) return all
         val downloaded = downloads.snapshotAsync()
-        return all.filter { downloaded[it.id]?.state == DownloadState.DOWNLOADED }
+        return all.filter {
+            it.audioUrl.isOnDeviceUrl() || downloaded[it.id]?.state == DownloadState.DOWNLOADED
+        }
     }
 
     /** Нажатие play там, где книга ещё не загружена в плеер, — например в свёрнутом плеере. */

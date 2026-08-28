@@ -1,6 +1,7 @@
 package ua.starky.audiokniga.ui.library
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ua.starky.audiokniga.app
+import ua.starky.audiokniga.data.local.LocalImporter
 import ua.starky.audiokniga.data.model.Book
 import ua.starky.audiokniga.data.model.Playlist
 import ua.starky.audiokniga.data.model.ShelfFilter
@@ -68,6 +70,41 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             list.firstOrNull { it.id == id } ?: list.firstOrNull()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    private val _message = MutableStateFlow<String?>(null)
+    val message: StateFlow<String?> = _message.asStateFlow()
+
+    private val _importing = MutableStateFlow(false)
+    val importing: StateFlow<Boolean> = _importing.asStateFlow()
+
+    /** Папка целиком — одна книга. Самый частый способ хранить аудиокнигу. */
+    fun importFolder(uri: Uri) = importWith { LocalImporter.fromFolder(getApplication<Application>(), uri) }
+
+    /** Отдельные файлы — когда книга разложена не по папкам. */
+    fun importFiles(uris: List<Uri>) = importWith { LocalImporter.fromFiles(getApplication<Application>(), uris) }
+
+    private fun importWith(load: suspend () -> ua.starky.audiokniga.data.model.BookDetails?) {
+        viewModelScope.launch {
+            _importing.value = true
+            runCatching { load() }
+                .onSuccess { details ->
+                    _importing.value = false
+                    if (details == null) {
+                        _message.value = "Аудиофайлов не нашлось. Поддерживаются mp3, m4a, m4b, ogg, opus, flac и wav."
+                        return@onSuccess
+                    }
+                    repo.importLocal(details)
+                    _message.value = "Добавлено: «${details.book.title}», " +
+                        "${details.chapters.size} ${chapterWord(details.chapters.size)}"
+                }
+                .onFailure {
+                    _importing.value = false
+                    _message.value = "Не удалось прочитать: ${it.message ?: "неизвестная ошибка"}"
+                }
+        }
+    }
+
+    fun clearMessage() { _message.value = null }
+
     fun setFilter(filter: ShelfFilter) {
         _filter.value = filter
     }
@@ -115,5 +152,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             repo.remove(bookId)
             playback.forget(bookId)
         }
+    }
+}
+
+private fun chapterWord(count: Int): String {
+    val mod100 = count % 100
+    val mod10 = count % 10
+    return when {
+        mod100 in 11..14 -> "глав"
+        mod10 == 1 -> "глава"
+        mod10 in 2..4 -> "главы"
+        else -> "глав"
     }
 }

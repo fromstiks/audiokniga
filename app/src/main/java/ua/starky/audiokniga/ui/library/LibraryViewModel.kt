@@ -70,6 +70,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             list.firstOrNull { it.id == id } ?: list.firstOrNull()
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    /** Сохранённая папка с книгами — с неё открывается системный проводник. */
+    val libraryFolder: StateFlow<Uri?> = application.app.settings.libraryFolder
+        .map { saved -> saved?.let { runCatching { Uri.parse(it) }.getOrNull() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 

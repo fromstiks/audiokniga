@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -26,6 +27,18 @@ class SettingsStore(private val context: Context) {
     suspend fun setPlaybackSpeed(speed: Float) = edit(KEY_SPEED, speed)
 
     suspend fun setSkipSeconds(seconds: Int) = edit(KEY_SKIP, seconds)
+
+    /**
+     * Папка с книгами на устройстве. Выбор файлов начинается отсюда, и её же
+     * сканирует кнопка в настройках.
+     */
+    val libraryFolder: Flow<String?> = context.dataStore.data.map { it[KEY_LIBRARY_FOLDER] }
+
+    suspend fun setLibraryFolder(uri: String) = edit(KEY_LIBRARY_FOLDER, uri)
+
+    suspend fun clearLibraryFolder() {
+        context.dataStore.edit { it.remove(KEY_LIBRARY_FOLDER) }
+    }
 
     /** Встроенные источники, которые пользователь убрал из поиска. */
     val disabledSources: Flow<Set<String>> =
@@ -50,5 +63,6 @@ class SettingsStore(private val context: Context) {
         private val KEY_SPEED = floatPreferencesKey("playback_speed")
         private val KEY_SKIP = intPreferencesKey("skip_seconds")
         private val KEY_DISABLED_SOURCES = stringSetPreferencesKey("disabled_sources")
+        private val KEY_LIBRARY_FOLDER = stringPreferencesKey("library_folder")
     }
 }

@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ua.starky.audiokniga.app
+import ua.starky.audiokniga.data.local.LocalImporter
 import ua.starky.audiokniga.data.model.CustomSource
 import ua.starky.audiokniga.data.provider.SourceListFormat
 import ua.starky.audiokniga.data.provider.SourceProbe
@@ -35,6 +36,55 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     val customSources: StateFlow<List<CustomSource>> = repo.observeCustomSources()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** Папка с книгами на устройстве — стартовая точка выбора и цель сканирования. */
+    val libraryFolder: StateFlow<String?> = settings.libraryFolder
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val _scanning = MutableStateFlow(false)
+    val scanning: StateFlow<Boolean> = _scanning.asStateFlow()
+
+    fun setLibraryFolder(uri: Uri) {
+        viewModelScope.launch {
+            settings.setLibraryFolder(uri.toString())
+            scan(uri)
+        }
+    }
+
+    fun forgetLibraryFolder() {
+        viewModelScope.launch {
+            settings.clearLibraryFolder()
+            _message.value = "Папка забыта. Книги, уже добавленные на полку, остались."
+        }
+    }
+
+    /** Пересканировать выбранную папку — например, после того как в неё положили новое. */
+    fun rescanLibraryFolder() {
+        val saved = libraryFolder.value
+        if (saved == null) {
+            _message.value = "Сначала выберите папку с книгами"
+            return
+        }
+        viewModelScope.launch { scan(Uri.parse(saved)) }
+    }
+
+    private suspend fun scan(uri: Uri) {
+        _scanning.value = true
+        runCatching { LocalImporter.scanLibrary(getApplication<Application>(), uri) }
+            .onSuccess { books ->
+                books.forEach { repo.importLocal(it) }
+                _scanning.value = false
+                _message.value = if (books.isEmpty()) {
+                    "В папке не нашлось аудиофайлов. Проверьте, что книги лежат внутри неё."
+                } else {
+                    "Добавлено ${books.size} ${bookWord(books.size)}"
+                }
+            }
+            .onFailure {
+                _scanning.value = false
+                _message.value = "Не удалось прочитать папку: ${it.message ?: "неизвестная ошибка"}"
+            }
+    }
 
     /** Встроенные источники, убранные из поиска. */
     val disabledSources: StateFlow<Set<String>> = settings.disabledSources
@@ -220,5 +270,16 @@ private fun sourceWord(count: Int): String {
         mod10 == 1 -> "источник"
         mod10 in 2..4 -> "источника"
         else -> "источников"
+    }
+}
+
+private fun bookWord(count: Int): String {
+    val mod100 = count % 100
+    val mod10 = count % 10
+    return when {
+        mod100 in 11..14 -> "книг"
+        mod10 == 1 -> "книга"
+        mod10 in 2..4 -> "книги"
+        else -> "книг"
     }
 }

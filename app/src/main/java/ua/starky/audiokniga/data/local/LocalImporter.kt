@@ -21,6 +21,9 @@ object LocalImporter {
 
     const val PROVIDER_ID = "local"
 
+    /** Глубже трёх уровней домашние коллекции не уходят, а обход дерева не бесплатен. */
+    private const val MAX_DEPTH = 3
+
     private val AUDIO_EXTENSIONS = setOf(
         "mp3", "m4a", "m4b", "ogg", "oga", "opus", "aac", "wav", "flac", "mp4",
     )
@@ -42,6 +45,40 @@ object LocalImporter {
             sourceUrl = treeUri.toString(),
             items = files.map { it.uri to it.name.orEmpty() },
         )
+    }
+
+    /**
+     * Обход папки-библиотеки: каждая вложенная папка, где лежит аудио, — отдельная книга.
+     * Так устроено большинство домашних коллекций: /Аудиокниги/Автор — Название/01.mp3,
+     * и добавлять их по одной было бы работой на вечер.
+     */
+    suspend fun scanLibrary(context: Context, treeUri: Uri): List<BookDetails> = withContext(Dispatchers.IO) {
+        persist(context, treeUri)
+        val root = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext emptyList()
+        val books = mutableListOf<BookDetails>()
+        collect(context, root, depth = 0, into = books)
+        books
+    }
+
+    private fun collect(context: Context, dir: DocumentFile, depth: Int, into: MutableList<BookDetails>) {
+        if (depth > MAX_DEPTH) return
+        val children = runCatching { dir.listFiles() }.getOrNull() ?: return
+
+        val audio = children
+            .filter { it.isFile && it.name.isAudio() }
+            .sortedWith(compareBy(NaturalOrder) { it.name.orEmpty() })
+
+        if (audio.isNotEmpty()) {
+            into += build(
+                context = context,
+                bookId = "$PROVIDER_ID:${dir.uri}",
+                fallbackTitle = dir.name?.cleanUp() ?: "Книга с устройства",
+                sourceUrl = dir.uri.toString(),
+                items = audio.map { it.uri to it.name.orEmpty() },
+            )
+        }
+
+        children.filter { it.isDirectory }.forEach { collect(context, it, depth + 1, into) }
     }
 
     /** Выбранные вручную файлы — тоже одна книга, в порядке выбора. */

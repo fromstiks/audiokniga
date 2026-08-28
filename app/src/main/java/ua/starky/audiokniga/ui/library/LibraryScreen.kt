@@ -73,6 +73,7 @@ fun LibraryScreen(
 
     val message by viewModel.message.collectAsStateWithLifecycle()
     val importing by viewModel.importing.collectAsStateWithLifecycle()
+    val libraryFolder by viewModel.libraryFolder.collectAsStateWithLifecycle()
 
     var creating by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
@@ -104,7 +105,7 @@ fun LibraryScreen(
                     NeuIconButton(
                         icon = AppIcons.Folder,
                         contentDescription = "Добавить книгу с устройства",
-                        onClick = { pickFolder.launch(null) },
+                        onClick = { pickFolder.launch(libraryFolder) },
                         size = 42.dp,
                         iconSize = 17.dp,
                         enabled = !importing,
@@ -144,7 +145,7 @@ fun LibraryScreen(
             when {
                 books.isEmpty() && filter is ShelfFilter.All -> EmptyShelf(
                     onOpenSearch = onOpenSearch,
-                    onPickFolder = { pickFolder.launch(null) },
+                    onPickFolder = { pickFolder.launch(libraryFolder) },
                     onPickFiles = { pickFiles.launch(arrayOf("audio/*")) },
                 )
 

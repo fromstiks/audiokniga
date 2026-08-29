@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ua.starky.audiokniga.app
 import ua.starky.audiokniga.data.model.Book
+import ua.starky.audiokniga.data.model.Bookmark
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.ChapterOrder
 import ua.starky.audiokniga.data.model.ChapterUi
@@ -21,6 +22,8 @@ import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.download.DownloadInfo
 import ua.starky.audiokniga.playback.isOnDeviceUrl
 import ua.starky.audiokniga.playback.PlaybackState
+import ua.starky.audiokniga.playback.SleepPlan
+import ua.starky.audiokniga.playback.SleepTimerState
 import ua.starky.audiokniga.settings.SettingsStore
 
 data class PlayerUiState(
@@ -122,11 +125,42 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), PlaylistPicker())
 
+    /**
+     * Таймер и закладки — отдельными потоками, а не внутри PlayerUiState: отсчёт
+     * тикает дважды в секунду, и незачем пересобирать из-за него весь экран.
+     */
+    val sleep: StateFlow<SleepTimerState> = playback.sleep
+
+    val bookmarks: StateFlow<List<Bookmark>> = repo.observeBookmarks(bookId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     init {
         viewModelScope.launch {
             downloads.observe().collect { downloadInfo.value = it }
         }
         load()
+    }
+
+    fun setSleepTimer(plan: SleepPlan) = playback.setSleepTimer(plan)
+
+    /** Отметить текущий момент руками. */
+    fun markCurrentPosition() {
+        viewModelScope.launch {
+            val mark = playback.markCurrentPosition()
+            message.value = if (mark == null) {
+                "Отмечать пока нечего: книга не запущена"
+            } else {
+                "Момент отмечен — «${mark.chapterTitle}»"
+            }
+        }
+    }
+
+    fun jumpTo(bookmark: Bookmark) {
+        viewModelScope.launch { runCatching { playback.jumpTo(bookmark) } }
+    }
+
+    fun deleteBookmark(id: String) {
+        viewModelScope.launch { repo.deleteBookmark(id) }
     }
 
     fun toggleFavorite() {

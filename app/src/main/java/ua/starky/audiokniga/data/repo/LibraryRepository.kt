@@ -15,7 +15,9 @@ import kotlinx.coroutines.withContext
 import ua.starky.audiokniga.data.db.AppDatabase
 import ua.starky.audiokniga.data.db.BookEntity
 import ua.starky.audiokniga.data.db.ChapterEntity
+import ua.starky.audiokniga.data.db.BookmarkEntity
 import ua.starky.audiokniga.data.model.Book
+import ua.starky.audiokniga.data.model.Bookmark
 import ua.starky.audiokniga.data.model.BookDetails
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.ChapterOrder
@@ -75,6 +77,7 @@ class LibraryRepository(context: Context) {
     private val chapters = db.chapterDao()
     private val customSources = db.customSourceDao()
     private val playlists = db.playlistDao()
+    private val bookmarks = db.bookmarkDao()
 
     fun observeLibrary(): Flow<List<Book>> = books.observeLibrary().map { list -> list.map { it.toBook() } }
 
@@ -230,8 +233,62 @@ class LibraryRepository(context: Context) {
     suspend fun remove(bookId: String) = withContext(Dispatchers.IO) {
         chapters.deleteForBook(bookId)
         playlists.removeBookEverywhere(bookId)
+        bookmarks.deleteForBook(bookId)
         books.delete(bookId)
     }
+
+    // ——— Отмеченные моменты ———
+
+    fun observeBookmarks(bookId: String): Flow<List<Bookmark>> =
+        bookmarks.observeForBook(bookId).map { list -> list.map { it.toBookmark() } }
+
+    /**
+     * [replaceSameLabel] — для метки таймера сна: интересен последний момент засыпания,
+     * а не тридцать за месяц. Отметки, поставленные руками, при этом не трогаются.
+     */
+    suspend fun addBookmark(
+        bookId: String,
+        chapterId: String,
+        chapterTitle: String,
+        positionMs: Long,
+        label: String,
+        replaceSameLabel: Boolean = false,
+    ): Bookmark = withContext(Dispatchers.IO) {
+        if (replaceSameLabel) bookmarks.deleteLabelled(bookId, label)
+        val bookmark = Bookmark(
+            id = UUID.randomUUID().toString(),
+            bookId = bookId,
+            chapterId = chapterId,
+            chapterTitle = chapterTitle,
+            positionMs = positionMs,
+            label = label,
+            createdAt = System.currentTimeMillis(),
+        )
+        bookmarks.upsert(
+            BookmarkEntity(
+                id = bookmark.id,
+                bookId = bookmark.bookId,
+                chapterId = bookmark.chapterId,
+                chapterTitle = bookmark.chapterTitle,
+                positionMs = bookmark.positionMs,
+                label = bookmark.label,
+                createdAt = bookmark.createdAt,
+            )
+        )
+        bookmark
+    }
+
+    suspend fun deleteBookmark(id: String) = withContext(Dispatchers.IO) { bookmarks.delete(id) }
+
+    private fun BookmarkEntity.toBookmark() = Bookmark(
+        id = id,
+        bookId = bookId,
+        chapterId = chapterId,
+        chapterTitle = chapterTitle,
+        positionMs = positionMs,
+        label = label,
+        createdAt = createdAt,
+    )
 
     // ——— Избранное и списки ———
 

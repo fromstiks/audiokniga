@@ -14,8 +14,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CustomSourceEntity::class,
         PlaylistEntity::class,
         PlaylistBookEntity::class,
+        BookmarkEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -23,6 +24,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chapterDao(): ChapterDao
     abstract fun customSourceDao(): CustomSourceDao
     abstract fun playlistDao(): PlaylistDao
+    abstract fun bookmarkDao(): BookmarkDao
 
     companion object {
         @Volatile private var instance: AppDatabase? = null
@@ -74,13 +76,31 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Отмеченные моменты в книгах. Полку при этом терять незачем. */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `bookmarks` (" +
+                        "`id` TEXT NOT NULL, " +
+                        "`bookId` TEXT NOT NULL, " +
+                        "`chapterId` TEXT NOT NULL, " +
+                        "`chapterTitle` TEXT NOT NULL, " +
+                        "`positionMs` INTEGER NOT NULL, " +
+                        "`label` TEXT NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`id`))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_bookmarks_bookId` ON `bookmarks` (`bookId`)")
+            }
+        }
+
         fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "audiokniga.db",
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 .also { instance = it }
         }

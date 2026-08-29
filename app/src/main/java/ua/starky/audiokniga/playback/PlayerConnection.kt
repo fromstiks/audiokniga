@@ -151,6 +151,8 @@ class PlayerConnection(
         }
     }
 
+    fun pause() { controller?.pause() }
+
     fun seekTo(positionMs: Long) { controller?.seekTo(positionMs) }
 
     fun seekToFraction(fraction: Float) {
@@ -164,23 +166,28 @@ class PlayerConnection(
         player.seekTo((player.currentPosition + deltaMs).coerceAtLeast(0L))
     }
 
-    fun playChapter(index: Int) {
+    fun playChapter(index: Int, positionMs: Long = 0L) {
         val player = controller ?: return
         if (index !in 0 until player.mediaItemCount) return
-        player.seekTo(index, 0L)
+        player.seekTo(index, positionMs)
         player.prepare()
         player.play()
     }
 
-    /** Глава ищется по идентификатору: её место в очереди зависит от режима источника. */
-    fun playChapterById(chapterId: String) {
-        val player = controller ?: return
+    /**
+     * Глава ищется по идентификатору: её место в очереди зависит от режима источника.
+     * Возвращает false, если такой главы в очереди нет — например в офлайне она
+     * не скачана, и об этом надо сказать, а не молчать.
+     */
+    fun playChapterById(chapterId: String, positionMs: Long = 0L): Boolean {
+        val player = controller ?: return false
         for (index in 0 until player.mediaItemCount) {
             if (player.getMediaItemAt(index).mediaId == chapterId) {
-                playChapter(index)
-                return
+                playChapter(index, positionMs)
+                return true
             }
         }
+        return false
     }
 
     fun clearQueue() {

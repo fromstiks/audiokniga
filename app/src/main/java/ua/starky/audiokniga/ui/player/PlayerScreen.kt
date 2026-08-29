@@ -44,10 +44,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ua.starky.audiokniga.data.model.Bookmark
 import ua.starky.audiokniga.data.model.ChapterUi
 import ua.starky.audiokniga.data.model.DownloadState
 import ua.starky.audiokniga.data.model.SourceMode
 import ua.starky.audiokniga.data.provider.ProviderRegistry
+import ua.starky.audiokniga.playback.SleepPlan
+import ua.starky.audiokniga.playback.SleepTimerState
 import ua.starky.audiokniga.ui.components.AppIcons
 import ua.starky.audiokniga.ui.components.BookCover
 import ua.starky.audiokniga.ui.components.NeuIconButton
@@ -61,6 +64,9 @@ import ua.starky.audiokniga.ui.components.SkipButton
 import ua.starky.audiokniga.ui.theme.Neu
 import ua.starky.audiokniga.ui.theme.neuRaised
 import ua.starky.audiokniga.ui.theme.neuSunken
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Плеер и оглавление на одном экране. Переключатель источника — первое, что видно сверху.
@@ -72,8 +78,12 @@ fun PlayerScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val picker by viewModel.playlistPicker.collectAsStateWithLifecycle()
+    val sleep by viewModel.sleep.collectAsStateWithLifecycle()
+    val marks by viewModel.bookmarks.collectAsStateWithLifecycle()
     val c = Neu.colors
     var pickerOpen by remember { mutableStateOf(false) }
+    var sleepOpen by remember { mutableStateOf(false) }
+    var marksOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.message) {
         if (state.message != null) {
@@ -236,6 +246,24 @@ fun PlayerScreen(
             SkipButton(seconds = state.skipSeconds, forward = true, onClick = viewModel::skipForward)
         }
 
+        Spacer(Modifier.height(16.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            ToolChip(
+                icon = AppIcons.Sleep,
+                text = sleep.label,
+                accent = sleep.armed,
+                onClick = { sleepOpen = true },
+                modifier = Modifier.weight(1f),
+            )
+            ToolChip(
+                icon = if (marks.isEmpty()) AppIcons.Bookmark else AppIcons.BookmarkFilled,
+                text = if (marks.isEmpty()) "Отметить момент" else "Метки · ${marks.size}",
+                accent = marks.isNotEmpty(),
+                onClick = { marksOpen = true },
+                modifier = Modifier.weight(1f),
+            )
+        }
+
         Spacer(Modifier.height(20.dp))
         Row(
             Modifier.fillMaxWidth(),
@@ -313,6 +341,30 @@ fun PlayerScreen(
         }
     }
 
+    if (sleepOpen) {
+        SleepDialog(
+            sleep = sleep,
+            onSelect = { plan ->
+                viewModel.setSleepTimer(plan)
+                sleepOpen = false
+            },
+            onDismiss = { sleepOpen = false },
+        )
+    }
+
+    if (marksOpen) {
+        BookmarksDialog(
+            bookmarks = marks,
+            onJump = { bookmark ->
+                viewModel.jumpTo(bookmark)
+                marksOpen = false
+            },
+            onDelete = viewModel::deleteBookmark,
+            onMarkNow = viewModel::markCurrentPosition,
+            onDismiss = { marksOpen = false },
+        )
+    }
+
     if (pickerOpen) {
         PlaylistDialog(
             picker = picker,
@@ -320,6 +372,240 @@ fun PlayerScreen(
             onCreate = viewModel::createPlaylistWithBook,
             onDismiss = { pickerOpen = false },
         )
+    }
+}
+
+/** Широкая кнопка-плашка под управлением воспроизведением. */
+@Composable
+private fun ToolChip(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    accent: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = Neu.colors
+    Row(
+        modifier
+            .then(
+                if (accent) Modifier.neuSunken(RoundedCornerShape(16.dp), depth = 3.dp)
+                else Modifier.neuRaised(RoundedCornerShape(16.dp), elevation = 4.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 13.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Icon(icon, null, tint = if (accent) c.accent else c.inkFaint, modifier = Modifier.size(14.dp))
+        Text(
+            text = text,
+            color = if (accent) c.ink else c.inkMuted,
+            fontSize = 11.5.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * Таймер сна. Отсчёт идёт по часам, а не по времени звучания, поэтому в подписи
+ * честно написано, когда книга замолчит.
+ */
+@Composable
+private fun SleepDialog(
+    sleep: SleepTimerState,
+    onSelect: (SleepPlan) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = Neu.colors
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .neuRaised(RoundedCornerShape(24.dp), elevation = 8.dp)
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Таймер сна", color = c.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                text = if (sleep.armed) {
+                    "Осталось ${sleep.label}. Когда время выйдет, книга встанет на паузу, " +
+                        "а место, где вы заснули, само отметится закладкой."
+                } else {
+                    "Книга встанет на паузу сама, а место, на котором это случилось, " +
+                        "отметится закладкой — чтобы утром было куда вернуться."
+                },
+                color = c.inkMuted,
+                fontSize = 12.5.sp,
+                lineHeight = 18.sp,
+            )
+
+            // Раскладываем по три в ряд руками: FlowRow всё ещё за opt-in.
+            SleepPlan.presets.chunked(3).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { minutes ->
+                        val selected = (sleep.plan as? SleepPlan.After)?.minutes == minutes
+                        SleepOption(
+                            text = "$minutes мин",
+                            selected = selected,
+                            onClick = { onSelect(SleepPlan.After(minutes)) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    // Последний ряд короче — добиваем пустотой, иначе кнопки разъедутся.
+                    repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+
+            SleepOption(
+                text = "До конца главы",
+                selected = sleep.plan == SleepPlan.EndOfChapter,
+                onClick = { onSelect(SleepPlan.EndOfChapter) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+
+            if (sleep.armed) {
+                SleepOption(
+                    text = "Выключить таймер",
+                    selected = false,
+                    onClick = { onSelect(SleepPlan.Off) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SleepOption(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val c = Neu.colors
+    Box(
+        modifier
+            .then(
+                if (selected) Modifier.neuSunken(RoundedCornerShape(14.dp), depth = 2.5.dp)
+                else Modifier.neuRaised(RoundedCornerShape(14.dp), elevation = 3.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(vertical = 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = text,
+            color = if (selected) c.accent else c.inkMuted,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+        )
+    }
+}
+
+/**
+ * Отмеченные моменты. Метку таймера сна видно сразу: именно к ней возвращаются утром.
+ */
+@Composable
+private fun BookmarksDialog(
+    bookmarks: List<Bookmark>,
+    onJump: (Bookmark) -> Unit,
+    onDelete: (String) -> Unit,
+    onMarkNow: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val c = Neu.colors
+    val stamp = remember { SimpleDateFormat("d MMM, HH:mm", Locale.getDefault()) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .neuRaised(RoundedCornerShape(24.dp), elevation = 8.dp)
+                .padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Отмеченные моменты", color = c.ink, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+
+            if (bookmarks.isEmpty()) {
+                Text(
+                    "Пока пусто. Отметьте место сами или включите таймер сна — " +
+                        "он поставит метку там, где остановит книгу.",
+                    color = c.inkMuted,
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp,
+                )
+            } else {
+                LazyColumn(
+                    Modifier.heightIn(max = 280.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    items(bookmarks, key = { it.id }) { bookmark ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .neuRaised(RoundedCornerShape(13.dp), elevation = 3.dp)
+                                .clickable { onJump(bookmark) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (bookmark.automatic) AppIcons.Sleep else AppIcons.Bookmark,
+                                contentDescription = null,
+                                tint = if (bookmark.automatic) c.accent else c.inkFaint,
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(
+                                    text = bookmark.chapterTitle,
+                                    color = c.ink,
+                                    fontSize = 12.5.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = formatTime(bookmark.positionMs) +
+                                        " · " + bookmark.label.lowercase() +
+                                        " · " + stamp.format(Date(bookmark.createdAt)),
+                                    color = c.inkFaint,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                            Icon(
+                                AppIcons.Trash,
+                                "Удалить метку",
+                                tint = c.inkFaint,
+                                modifier = Modifier.size(14.dp).clickable { onDelete(bookmark.id) },
+                            )
+                        }
+                    }
+                }
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                ToolChip(
+                    icon = AppIcons.Plus,
+                    text = "Отметить сейчас",
+                    accent = false,
+                    onClick = onMarkNow,
+                    modifier = Modifier.weight(1f),
+                )
+                ToolChip(
+                    icon = AppIcons.Check,
+                    text = "Готово",
+                    accent = false,
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+        }
     }
 }
 

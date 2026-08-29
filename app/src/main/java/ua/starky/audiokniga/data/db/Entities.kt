@@ -70,3 +70,16 @@ data class PlaylistBookEntity(
     val bookId: String,
     val addedAt: Long,
 )
+
+/** Отмеченный момент в книге. Глава хранится идентификатором: её номер зависит
+ *  от выбранного порядка и от режима источника, а идентификатор — нет. */
+@Entity(tableName = "bookmarks", indices = [Index("bookId")])
+data class BookmarkEntity(
+    @PrimaryKey val id: String,
+    val bookId: String,
+    val chapterId: String,
+    val chapterTitle: String,
+    val positionMs: Long,
+    val label: String,
+    val createdAt: Long,
+)

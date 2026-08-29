@@ -1,16 +1,20 @@
 package ua.starky.audiokniga.playback
 
 import android.content.Context
+import android.os.SystemClock
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import ua.starky.audiokniga.data.model.Bookmark
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.ChapterOrder
 import ua.starky.audiokniga.data.model.DownloadState
@@ -48,6 +52,11 @@ class PlaybackController(
 
     /** Шаг кнопок перемотки. Одно значение на всё приложение, включая замок и виджет. */
     private val skipMs: Long get() = SkipSettings.skipMs
+
+    /** Таймер сна. Живёт в приложении, а не на экране: экран можно и закрыть. */
+    private val _sleep = MutableStateFlow(SleepTimerState())
+    val sleep: StateFlow<SleepTimerState> = _sleep.asStateFlow()
+    private var sleepJob: Job? = null
 
     private val ready = CompletableDeferred<Unit>()
     private val queueLock = Mutex()
@@ -214,7 +223,7 @@ class PlaybackController(
 
     fun seekFraction(fraction: Float) = connection.seekToFraction(fraction)
 
-    fun playChapter(chapterId: String) = connection.playChapterById(chapterId)
+    fun playChapter(chapterId: String) { connection.playChapterById(chapterId) }
 
     fun setSpeed(speed: Float) = connection.setSpeed(speed)
 
@@ -230,6 +239,113 @@ class PlaybackController(
             queuedBookId = null
             queuedMode = null
             connection.clearQueue()
+        }
+    }
+
+    // ——— Таймер сна и отмеченные моменты ———
+
+    /**
+     * Включает или снимает таймер сна. Отсчёт идёт по часам, а не по времени
+     * воспроизведения: пауза посреди ночи его не продлевает.
+     */
+    fun setSleepTimer(plan: SleepPlan) {
+        sleepJob?.cancel()
+        sleepJob = null
+
+        when (plan) {
+            SleepPlan.Off -> {
+                _sleep.value = SleepTimerState()
+                _notice.value = "Таймер сна выключен"
+            }
+
+            is SleepPlan.After -> {
+                val total = plan.minutes * 60_000L
+                val endAt = SystemClock.elapsedRealtime() + total
+                _sleep.value = SleepTimerState(plan, total)
+                sleepJob = scope.launch {
+                    while (isActive) {
+                        delay(500)
+                        val left = endAt - SystemClock.elapsedRealtime()
+                        _sleep.value = _sleep.value.copy(remainingMs = left.coerceAtLeast(0L))
+                        if (left <= 0L) break
+                    }
+                    stopForSleep()
+                }
+                _notice.value = "Таймер сна: ${plan.minutes} мин"
+            }
+
+            SleepPlan.EndOfChapter -> {
+                // Без открытой главы ждать нечего: конца у неё не наступит.
+                val startedOn = state.value.chapterId
+                if (startedOn == null) {
+                    _sleep.value = SleepTimerState()
+                    _notice.value = "Сначала запустите книгу — тогда таймер будет знать, какую главу дослушать"
+                    return
+                }
+                _sleep.value = SleepTimerState(plan, chapterLeftMs())
+                sleepJob = scope.launch {
+                    while (isActive) {
+                        delay(500)
+                        val current = state.value
+                        _sleep.value = _sleep.value.copy(remainingMs = chapterLeftMs())
+                        // Глава сменилась сама или руками — в обоих случаях эта дослушана.
+                        if (current.chapterId != startedOn) break
+                        if (current.durationMs > 0 && chapterLeftMs() <= 700L) break
+                    }
+                    stopForSleep()
+                }
+                _notice.value = "Таймер сна: до конца главы"
+            }
+        }
+    }
+
+    private fun chapterLeftMs(): Long {
+        val current = state.value
+        if (current.durationMs <= 0L) return 0L
+        return (current.durationMs - current.positionMs).coerceAtLeast(0L)
+    }
+
+    /**
+     * Таймер досчитал. Ставим паузу и отмечаем момент: под сон никто не запоминает,
+     * на чём заснул, а прогресс книги к утру можно и перемотать случайно.
+     */
+    private suspend fun stopForSleep() {
+        val mark = runCatching { markCurrentPosition(Bookmark.SLEEP_LABEL) }.getOrNull()
+        connection.pause()
+        runCatching { saveProgress() }
+        _sleep.value = SleepTimerState()
+        sleepJob = null
+        _notice.value = if (mark == null) {
+            "Таймер сна: пауза"
+        } else {
+            "Таймер сна: пауза. Момент отмечен — «${mark.chapterTitle}»"
+        }
+    }
+
+    /**
+     * Отмечает то место, где книга стоит сейчас. Глава запоминается идентификатором:
+     * её номер зависит от порядка глав и от режима источника, а идентификатор — нет.
+     */
+    suspend fun markCurrentPosition(label: String = Bookmark.MANUAL_LABEL): Bookmark? {
+        val current = state.value
+        val bookId = current.bookId ?: _openBookId.value ?: return null
+        val chapterId = current.chapterId ?: return null
+        return repo.addBookmark(
+            bookId = bookId,
+            chapterId = chapterId,
+            chapterTitle = current.chapterTitle ?: "Глава",
+            positionMs = current.positionMs,
+            label = label,
+            replaceSameLabel = label == Bookmark.SLEEP_LABEL,
+        )
+    }
+
+    /** Вернуться к отмеченному моменту. */
+    suspend fun jumpTo(bookmark: Bookmark) {
+        open(bookmark.bookId, play = false)
+        val found = connection.playChapterById(bookmark.chapterId, bookmark.positionMs)
+        if (!found) {
+            _notice.value = "Этой главы нет в текущем списке. В «Офлайн» она появится после загрузки."
         }
     }
 

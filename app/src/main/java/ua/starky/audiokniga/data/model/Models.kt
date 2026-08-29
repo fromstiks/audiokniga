@@ -96,6 +96,28 @@ data class Playlist(
     val bookCount: Int,
 )
 
+/**
+ * Отмеченный момент в книге. Ставится вручную и сам собой — когда книгу
+ * остановил таймер сна: под сон человек не запоминает, где заснул.
+ */
+data class Bookmark(
+    val id: String,
+    val bookId: String,
+    val chapterId: String,
+    val chapterTitle: String,
+    val positionMs: Long,
+    val label: String,
+    val createdAt: Long,
+) {
+    /** Поставлена таймером сна, а не руками. */
+    val automatic: Boolean get() = label == SLEEP_LABEL
+
+    companion object {
+        const val SLEEP_LABEL = "Таймер сна"
+        const val MANUAL_LABEL = "Отмечено вручную"
+    }
+}
+
 /** Что показывать на полке. */
 sealed interface ShelfFilter {
     data object All : ShelfFilter

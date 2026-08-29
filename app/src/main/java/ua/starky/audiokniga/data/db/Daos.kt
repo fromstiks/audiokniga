@@ -129,3 +129,21 @@ interface PlaylistDao {
         deletePlaylistRow(playlistId)
     }
 }
+
+@Dao
+interface BookmarkDao {
+    @Query("SELECT * FROM bookmarks WHERE bookId = :bookId ORDER BY createdAt DESC")
+    fun observeForBook(bookId: String): Flow<List<BookmarkEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(bookmark: BookmarkEntity)
+
+    @Query("DELETE FROM bookmarks WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("DELETE FROM bookmarks WHERE bookId = :bookId")
+    suspend fun deleteForBook(bookId: String)
+
+    @Query("DELETE FROM bookmarks WHERE bookId = :bookId AND label = :label")
+    suspend fun deleteLabelled(bookId: String, label: String)
+}

@@ -242,6 +242,18 @@ object AppIcons {
         arcToRelative(2.2f, 2f, 0f, true, true, 4.4f, 0f)
     }
 
+    /** Закладка — отмеченный момент в книге. */
+    val Bookmark: ImageVector = stroked("Bookmark") {
+        moveTo(6.5f, 4f); horizontalLineTo(17.5f); verticalLineTo(20f)
+        lineTo(12f, 16.2f); lineTo(6.5f, 20f); close()
+    }
+
+    /** Та же закладка, залитая: момент, поставленный таймером сна. */
+    val BookmarkFilled: ImageVector = filled("BookmarkFilled") {
+        moveTo(6.5f, 4f); horizontalLineTo(17.5f); verticalLineTo(20f)
+        lineTo(12f, 16.2f); lineTo(6.5f, 20f); close()
+    }
+
     /** Сортировка: строки разной длины со стрелкой. */
     val Sort: ImageVector = stroked("Sort") {
         moveTo(4f, 7f); horizontalLineTo(14f)

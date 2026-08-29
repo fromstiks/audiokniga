@@ -13,6 +13,8 @@ import ua.starky.audiokniga.data.repo.LibraryRepository
 import ua.starky.audiokniga.download.DownloadModule
 import ua.starky.audiokniga.download.DownloadTracker
 import ua.starky.audiokniga.playback.PlaybackController
+import ua.starky.audiokniga.playback.SkipSettings
+import ua.starky.audiokniga.widget.PlayerWidget
 import ua.starky.audiokniga.settings.SettingsStore
 
 class App : Application() {
@@ -54,7 +56,12 @@ class App : Application() {
             settings.disabledSources.collectLatest { ProviderRegistry.setDisabledBuiltIn(it) }
         }
         scope.launch {
-            settings.skipSeconds.collectLatest { playback.skipMs = it * 1000L }
+            settings.skipSeconds.collectLatest { SkipSettings.skipMs = it * 1000L }
+        }
+
+        // Виджет на рабочем столе живёт вне экранов и сам о плеере не узнает.
+        scope.launch {
+            playback.state.collectLatest { PlayerWidget.refresh(this@App) }
         }
 
         // Хранилище скачанного открывается с чтением диска. Делаем это заранее и в фоне,

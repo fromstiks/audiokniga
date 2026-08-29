@@ -42,9 +42,8 @@ class PlaybackController(
     private val _notice = MutableStateFlow<String?>(null)
     val notice: StateFlow<String?> = _notice.asStateFlow()
 
-    /** Шаг кнопок перемотки, задаётся в настройках. */
-    @Volatile
-    var skipMs: Long = 20_000L
+    /** Шаг кнопок перемотки. Одно значение на всё приложение, включая замок и виджет. */
+    private val skipMs: Long get() = SkipSettings.skipMs
 
     private val ready = CompletableDeferred<Unit>()
     private val queueLock = Mutex()

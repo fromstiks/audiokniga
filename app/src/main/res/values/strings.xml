@@ -3,4 +3,8 @@
     <string name="app_name">Аудиокнига</string>
     <string name="download_channel_name">Загрузка книг</string>
     <string name="playback_channel_name">Воспроизведение</string>
+    <string name="widget_play">Слушать или пауза</string>
+    <string name="widget_rewind">Перемотать назад</string>
+    <string name="widget_forward">Перемотать вперёд</string>
+    <string name="widget_name">Аудиокнига — плеер</string>
 </resources>

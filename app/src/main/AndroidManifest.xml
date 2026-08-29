@@ -32,6 +32,22 @@
             </intent-filter>
         </activity>
 
+        <!-- Виджет на рабочем столе. Кнопки шлют широковещательные события сюда же. -->
+        <receiver
+            android:name=".widget.PlayerWidget"
+            android:exported="false"
+            android:label="@string/widget_name">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="ua.starky.audiokniga.widget.PLAY_PAUSE" />
+                <action android:name="ua.starky.audiokniga.widget.REWIND" />
+                <action android:name="ua.starky.audiokniga.widget.FORWARD" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_player_info" />
+        </receiver>
+
         <service
             android:name=".playback.PlaybackService"
             android:exported="true"

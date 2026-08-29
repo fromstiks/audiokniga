@@ -32,16 +32,18 @@
             </intent-filter>
         </activity>
 
-        <!-- Виджет на рабочем столе. Кнопки шлют широковещательные события сюда же. -->
+        <!--
+            Виджет на рабочем столе. exported обязателен: APPWIDGET_UPDATE присылает
+            система, и без него виджет никогда не обновится. Своих действий в фильтре
+            нет намеренно — кнопки шлют адресные intent'ы прямо в этот класс, а чужим
+            приложениям управлять чужим плеером незачем.
+        -->
         <receiver
             android:name=".widget.PlayerWidget"
             android:exported="true"
             android:label="@string/widget_name">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="ua.starky.audiokniga.widget.PLAY_PAUSE" />
-                <action android:name="ua.starky.audiokniga.widget.REWIND" />
-                <action android:name="ua.starky.audiokniga.widget.FORWARD" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"

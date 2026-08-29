@@ -224,6 +224,9 @@ class LibraryRepository(context: Context) {
         (book?.lastChapterIndex ?: 0) to (book?.lastPositionMs ?: 0L)
     }
 
+    /** Книга, открытая последней. Нужна виджету: он умеет запускать её без экранов. */
+    suspend fun lastOpenedBookId(): String? = withContext(Dispatchers.IO) { books.lastOpenedId() }
+
     suspend fun remove(bookId: String) = withContext(Dispatchers.IO) {
         chapters.deleteForBook(bookId)
         playlists.removeBookEverywhere(bookId)

@@ -29,6 +29,8 @@ data class PlaybackState(
      *  в режиме «Офлайн» очередь короче, и номера перестают совпадать. */
     val chapterId: String? = null,
     val chapterTitle: String? = null,
+    /** Сколько глав сейчас заряжено в плеер. Ноль — играть нечего, нужна очередь. */
+    val queueSize: Int = 0,
     val error: String? = null,
 ) {
     /** Есть ли что показывать в свёрнутом плеере. */
@@ -94,8 +96,12 @@ class PlayerConnection(
             positionMs = player.currentPosition.coerceAtLeast(0L),
             durationMs = player.duration.takeIf { it > 0 } ?: 0L,
             speed = player.playbackParameters.speed,
+            // Процесс приложения могли убить, пока сервис играл дальше. Тогда очередь
+            // ставили не мы, и книгу остаётся узнать по метаданным главы.
+            bookId = _state.value.bookId ?: player.currentMediaItem?.mediaMetadata?.artist?.toString(),
             chapterId = player.currentMediaItem?.mediaId,
             chapterTitle = player.currentMediaItem?.mediaMetadata?.title?.toString(),
+            queueSize = player.mediaItemCount,
             error = null,
         )
     }
@@ -118,7 +124,7 @@ class PlayerConnection(
         player.setMediaItems(items, startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)), startPositionMs)
         player.prepare()
         player.playWhenReady = play
-        _state.value = _state.value.copy(bookId = bookId)
+        _state.value = _state.value.copy(bookId = bookId, queueSize = items.size)
     }
 
     /**
@@ -181,7 +187,12 @@ class PlayerConnection(
         val player = controller ?: return
         player.stop()
         player.clearMediaItems()
-        _state.value = _state.value.copy(bookId = null, chapterId = null, chapterTitle = null)
+        _state.value = _state.value.copy(
+            bookId = null,
+            chapterId = null,
+            chapterTitle = null,
+            queueSize = 0,
+        )
     }
 
     fun setSpeed(speed: Float) { controller?.setPlaybackSpeed(speed) }

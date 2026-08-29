@@ -18,6 +18,9 @@ interface BookDao {
     @Query("SELECT * FROM books WHERE id = :bookId")
     suspend fun getBook(bookId: String): BookEntity?
 
+    @Query("SELECT id FROM books ORDER BY lastOpenedAt DESC, addedAt DESC LIMIT 1")
+    suspend fun lastOpenedId(): String?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(book: BookEntity)
 

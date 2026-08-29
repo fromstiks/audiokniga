@@ -13,26 +13,27 @@ import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.MoreExecutors
 import ua.starky.audiokniga.MainActivity
 import ua.starky.audiokniga.R
 import ua.starky.audiokniga.app
-import ua.starky.audiokniga.data.model.Book
-import ua.starky.audiokniga.playback.PlaybackService
-import ua.starky.audiokniga.playback.SkipSettings
+import ua.starky.audiokniga.playback.WidgetAction
+
+/** То немногое, что виджету нужно показать. Собирается в приложении, хранится здесь. */
+data class WidgetSnapshot(
+    val title: String? = null,
+    val subtitle: String? = null,
+    val playing: Boolean = false,
+)
 
 /**
  * Виджет на рабочем столе: что играет и три кнопки.
  *
- * Команды идут не через startService, а подключением MediaController к сессии: запуск
- * сервиса из фона на новых Android запрещён, а привязка к MediaSessionService разрешена
- * и заодно поднимает сервис, если тот выгрузился.
+ * Команды идут через [ua.starky.audiokniga.playback.PlaybackController] — то же самое,
+ * что делают кнопки в приложении. Раньше виджет подключался к сессии сам, и это ломало
+ * play: приложение могло быть закрыто, привязка поднимала пустой плеер, и play() было
+ * нечего играть. Контроллер же сперва вернёт в очередь последнюю книгу.
  *
  * Приёмник обязан быть exported: APPWIDGET_UPDATE присылает система, и без этого
  * onUpdate не вызывается вовсе — виджет остаётся с пустой разметкой и мёртвыми кнопками.
@@ -40,50 +41,19 @@ import ua.starky.audiokniga.playback.SkipSettings
 class PlayerWidget : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        val views = buildViews(context, lastBook)
+        val views = buildViews(context, snapshot)
         ids.forEach { id -> manager.updateAppWidget(id, views) }
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
-        val command = intent.action?.takeIf { it in COMMANDS } ?: return
+        val action = COMMANDS[intent.action] ?: return
+        val playback = runCatching { context.app.playback }.getOrNull() ?: return
 
-        // Подключение асинхронное, поэтому просим у системы отсрочку.
+        // Команда выполняется не мгновенно, а после ухода из onReceive процесс могут
+        // выгрузить. Отсрочка держит его до конца работы.
         val pending = goAsync()
-        val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val future = MediaController.Builder(context, token).buildAsync()
-        val applicationContext = context.applicationContext
-
-        future.addListener({
-            val controller = runCatching { future.get() }.getOrNull()
-            if (controller == null) {
-                pending.finish()
-                return@addListener
-            }
-            runCatching { apply(controller, command) }
-
-            // Команда уходит по IPC. Освободить контроллер сразу — значит оборвать её
-            // на полпути, поэтому отпускаем его следующим шагом, а не в этот же миг.
-            Handler(Looper.getMainLooper()).postDelayed({
-                runCatching { controller.release() }
-                refresh(applicationContext, lastBook)
-                pending.finish()
-            }, RELEASE_DELAY_MS)
-        }, MoreExecutors.directExecutor())
-    }
-
-    private fun apply(controller: MediaController, command: String) {
-        val step = SkipSettings.skipMs
-        when (command) {
-            ACTION_PLAY_PAUSE ->
-                if (controller.isPlaying) controller.pause() else controller.play()
-
-            ACTION_REWIND ->
-                controller.seekTo((controller.currentPosition - step).coerceAtLeast(0L))
-
-            ACTION_FORWARD ->
-                controller.seekTo(controller.currentPosition + step)
-        }
+        playback.widgetCommand(action) { pending.finish() }
     }
 
     companion object {
@@ -91,49 +61,46 @@ class PlayerWidget : AppWidgetProvider() {
         const val ACTION_REWIND = "ua.starky.audiokniga.widget.REWIND"
         const val ACTION_FORWARD = "ua.starky.audiokniga.widget.FORWARD"
 
-        private val COMMANDS = setOf(ACTION_PLAY_PAUSE, ACTION_REWIND, ACTION_FORWARD)
-
-        /** Столько ждём доставки команды до сессии, прежде чем отпустить контроллер. */
-        private const val RELEASE_DELAY_MS = 700L
+        private val COMMANDS = mapOf(
+            ACTION_PLAY_PAUSE to WidgetAction.PLAY_PAUSE,
+            ACTION_REWIND to WidgetAction.REWIND,
+            ACTION_FORWARD to WidgetAction.FORWARD,
+        )
 
         /**
-         * Книга, показанная последней. Приёмник команд работает без доступа к базе,
-         * а перерисовать виджет после нажатия надо — иначе кнопка play не сменит вид.
+         * Показанное последним. Система может попросить перерисовать виджет в любой
+         * момент — в том числе когда читать состояние плеера ещё неоткуда.
          */
         @Volatile
-        private var lastBook: Book? = null
+        private var snapshot = WidgetSnapshot()
 
-        fun refresh(context: Context, book: Book?) {
-            lastBook = book
+        fun refresh(context: Context, state: WidgetSnapshot) {
+            snapshot = state
             val manager = AppWidgetManager.getInstance(context) ?: return
             val ids = runCatching {
                 manager.getAppWidgetIds(ComponentName(context, PlayerWidget::class.java))
             }.getOrNull() ?: return
             if (ids.isEmpty()) return
-            val views = buildViews(context, book)
+            val views = buildViews(context, state)
             ids.forEach { manager.updateAppWidget(it, views) }
         }
 
-        private fun buildViews(context: Context, book: Book?): RemoteViews {
+        private fun buildViews(context: Context, state: WidgetSnapshot): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_player)
-            val state = runCatching { context.app.playback.state.value }.getOrNull()
-            val playing = state?.isPlaying == true
 
             views.setTextViewText(
                 R.id.widget_title,
-                book?.title?.takeIf { it.isNotBlank() } ?: context.getString(R.string.app_name),
+                state.title?.takeIf { it.isNotBlank() } ?: context.getString(R.string.app_name),
             )
             views.setTextViewText(
                 R.id.widget_subtitle,
-                state?.chapterTitle?.takeIf { it.isNotBlank() }
-                    ?: book?.author
-                    ?: "Нечего слушать",
+                state.subtitle?.takeIf { it.isNotBlank() } ?: "Нечего слушать",
             )
             views.setImageViewResource(
                 R.id.widget_play,
-                if (playing) R.drawable.ic_media_pause else R.drawable.ic_media_play,
+                if (state.playing) R.drawable.ic_media_pause else R.drawable.ic_media_play,
             )
-            views.setImageViewBitmap(R.id.widget_cover, coverTile(context, book?.title))
+            views.setImageViewBitmap(R.id.widget_cover, coverTile(context, state.title))
 
             views.setOnClickPendingIntent(R.id.widget_rewind, command(context, ACTION_REWIND))
             views.setOnClickPendingIntent(R.id.widget_play, command(context, ACTION_PLAY_PAUSE))
@@ -187,7 +154,9 @@ class PlayerWidget : AppWidgetProvider() {
         }
 
         private fun command(context: Context, action: String): PendingIntent {
-            val intent = Intent(context, PlayerWidget::class.java).setAction(action)
+            val intent = Intent(context, PlayerWidget::class.java)
+                .setAction(action)
+                .setPackage(context.packageName)
             return PendingIntent.getBroadcast(context, action.hashCode(), intent, flags())
         }
 

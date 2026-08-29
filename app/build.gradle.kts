@@ -14,8 +14,32 @@ android {
         applicationId = "ua.starky.audiokniga"
         minSdk = 24
         targetSdk = 35
+        // versionCode намеренно не растёт: иначе на телефон нельзя было бы поставить
+        // сборку старее установленной, а именно так и откатываются с неудачной.
         versionCode = 1
-        versionName = "0.1.0"
+        // Короткий хеш коммита видно в системных настройках приложения — по нему
+        // сразу понятно, обновилась ли установленная сборка.
+        versionName = System.getenv("GITHUB_SHA")?.take(7)?.let { "0.1.0-$it" } ?: "0.1.0"
+    }
+
+    /**
+     * Ключ подписи лежит в репозитории намеренно.
+     *
+     * Android разрешает обновить установленное приложение только APK с той же подписью.
+     * Сборщик на CI каждый раз создавал себе новый временный debug-ключ, поэтому каждую
+     * сборку приходилось ставить с удалением предыдущей — вместе с базой и прогрессом.
+     * Общий ключ решает это: подпись одна и та же во всех сборках.
+     *
+     * Пароль здесь не секрет и секретом быть не может: ключ подписывает только отладочные
+     * сборки с отдельным applicationId. Для публикации в магазине нужен свой, закрытый.
+     */
+    signingConfigs {
+        create("shared") {
+            storeFile = rootProject.file("keystore/audiokniga-debug.jks")
+            storePassword = "audiokniga"
+            keyAlias = "audiokniga"
+            keyPassword = "audiokniga"
+        }
     }
 
     buildTypes {
@@ -25,6 +49,10 @@ android {
         }
         debug {
             applicationIdSuffix = ".debug"
+            // Файла может не быть в чужой копии репозитория — тогда остаётся ключ по умолчанию.
+            if (rootProject.file("keystore/audiokniga-debug.jks").exists()) {
+                signingConfig = signingConfigs.getByName("shared")
+            }
         }
     }
 

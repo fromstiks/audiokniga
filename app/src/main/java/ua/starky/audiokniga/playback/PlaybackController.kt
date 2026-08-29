@@ -10,12 +10,16 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.ChapterOrder
 import ua.starky.audiokniga.data.model.DownloadState
 import ua.starky.audiokniga.data.model.SourceMode
 import ua.starky.audiokniga.data.repo.LibraryRepository
 import ua.starky.audiokniga.download.DownloadTracker
+
+/** Что нажали в виджете на рабочем столе. */
+enum class WidgetAction { PLAY_PAUSE, REWIND, FORWARD }
 
 /**
  * Единственное на приложение управление воспроизведением.
@@ -167,6 +171,47 @@ class PlaybackController(
 
     fun skipBack() = connection.skipBy(-skipMs)
 
+    /**
+     * Команда из виджета.
+     *
+     * Виджет нельзя пускать к сессии напрямую. Он живёт и тогда, когда приложение
+     * закрыто; процесс поднимается ради самого нажатия, плеер в нём пустой, и play()
+     * там играть нечего — кнопка выглядит сломанной. Поэтому сначала возвращаем в плеер
+     * последнюю книгу и только потом выполняем команду.
+     *
+     * [onDone] отпускает приёмник: до его вызова система держит процесс живым.
+     */
+    fun widgetCommand(action: WidgetAction, onDone: () -> Unit = {}) {
+        scope.launch {
+            try {
+                // Приёмник нельзя держать дольше десятка секунд — иначе система его убьёт
+                // как зависший. Если сессия так и не поднялась, лучше отпустить.
+                withTimeoutOrNull(WIDGET_TIMEOUT_MS) {
+                    ready.await()
+                    val hadQueue = state.value.queueSize > 0
+                    if (!hadQueue) restoreLast(play = action == WidgetAction.PLAY_PAUSE)
+
+                    when (action) {
+                        // Очередь только что зарядили и уже запустили — повторное нажатие
+                        // здесь сразу поставило бы её на паузу.
+                        WidgetAction.PLAY_PAUSE -> if (hadQueue) connection.playPause()
+                        WidgetAction.REWIND -> connection.skipBy(-skipMs)
+                        WidgetAction.FORWARD -> connection.skipBy(skipMs)
+                    }
+                }
+            } finally {
+                onDone()
+            }
+        }
+    }
+
+    /** Вернуть в плеер книгу, которую слушали последней. */
+    private suspend fun restoreLast(play: Boolean) {
+        val target = _openBookId.value ?: repo.lastOpenedBookId() ?: return
+        runCatching { open(target, play = play) }
+            .onFailure { _notice.value = it.message ?: "Не удалось открыть книгу" }
+    }
+
     fun seekFraction(fraction: Float) = connection.seekToFraction(fraction)
 
     fun playChapter(chapterId: String) = connection.playChapterById(chapterId)
@@ -207,5 +252,10 @@ class PlaybackController(
                 if (state.value.isPlaying) runCatching { saveProgress() }
             }
         }
+    }
+
+    private companion object {
+        /** Столько ждём плеер по команде из виджета, прежде чем отпустить приёмник. */
+        const val WIDGET_TIMEOUT_MS = 8_000L
     }
 }

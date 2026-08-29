@@ -7,6 +7,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.data.repo.LibraryRepository
@@ -59,9 +60,17 @@ class App : Application() {
             settings.skipSeconds.collectLatest { SkipSettings.skipMs = it * 1000L }
         }
 
-        // Виджет на рабочем столе живёт вне экранов и сам о плеере не узнает.
+        // Виджет живёт вне экранов и сам о плеере не узнает. Книгу подбираем здесь же:
+        // приёмник виджета работает без доступа к базе.
         scope.launch {
-            playback.state.collectLatest { PlayerWidget.refresh(this@App) }
+            combine(
+                playback.state,
+                playback.openBookId,
+                repository.observeLibrary(),
+            ) { state, openId, books ->
+                val id = state.bookId ?: openId
+                books.firstOrNull { it.id == id } ?: books.firstOrNull()
+            }.collectLatest { book -> PlayerWidget.refresh(this@App, book) }
         }
 
         // Хранилище скачанного открывается с чтением диска. Делаем это заранее и в фоне,

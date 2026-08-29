@@ -1,48 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Виджет собран на RemoteViews: Compose в нём не работает. Палитра взята светлая
-  неоморфная — виджет лежит на обоях, и подстроиться под них всё равно нельзя.
+  Виджет собран на RemoteViews: Compose в нём не работает, а цвета берутся ресурсами,
+  поэтому светлая и тёмная тема разведены по values и values-night.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
     android:background="@drawable/widget_background"
-    android:padding="14dp">
+    android:padding="12dp">
 
-    <TextView
-        android:id="@+id/widget_title"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:textColor="#2B2924"
-        android:textSize="14sp"
-        android:textStyle="bold"
-        android:text="@string/app_name" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
 
-    <TextView
-        android:id="@+id/widget_subtitle"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="2dp"
-        android:maxLines="1"
-        android:ellipsize="end"
-        android:textColor="#726D62"
-        android:textSize="11sp" />
+        <ImageView
+            android:id="@+id/widget_cover"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:scaleType="centerCrop"
+            android:contentDescription="@string/widget_cover" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="10dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/widget_title"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/widget_ink"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:text="@string/app_name" />
+
+            <TextView
+                android:id="@+id/widget_subtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="1dp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textColor="@color/widget_ink_muted"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="6dp"
         android:orientation="horizontal"
         android:gravity="center">
 
         <ImageButton
             android:id="@+id/widget_rewind"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:scaleType="fitCenter"
             android:padding="11dp"
@@ -51,10 +73,10 @@
 
         <ImageButton
             android:id="@+id/widget_play"
-            android:layout_width="56dp"
-            android:layout_height="56dp"
-            android:layout_marginStart="10dp"
-            android:layout_marginEnd="10dp"
+            android:layout_width="54dp"
+            android:layout_height="54dp"
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:scaleType="fitCenter"
             android:padding="13dp"
@@ -63,8 +85,8 @@
 
         <ImageButton
             android:id="@+id/widget_forward"
-            android:layout_width="46dp"
-            android:layout_height="46dp"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:scaleType="fitCenter"
             android:padding="11dp"

@@ -6,5 +6,6 @@
     <string name="widget_play">Слушать или пауза</string>
     <string name="widget_rewind">Перемотать назад</string>
     <string name="widget_forward">Перемотать вперёд</string>
+    <string name="widget_cover">Обложка книги</string>
     <string name="widget_name">Аудиокнига — плеер</string>
 </resources>

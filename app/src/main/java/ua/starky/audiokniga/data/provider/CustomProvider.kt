@@ -26,17 +26,39 @@ class CustomProvider(val source: CustomSource) : AudiobookProvider {
         if (q.isEmpty()) return emptyList()
         if (!source.isSearchTemplate) throw ProviderException(NEEDS_PLACEHOLDER)
 
-        val details = load(source.urlFor(q))
+        val url = source.urlFor(q)
+        val response = Http.get(url)
+
+        // Свой сервер-агрегатор отвечает списком книг — каждая становится отдельной
+        // находкой. Обычный сайт по-прежнему даёт одну книгу из всего, что на странице.
+        AggregatorFormat.parseSearch(response, id)?.let { return it }
+
+        val details = fromPage(response, url)
         return listOf(SearchResult(details.book, details.chapters.size))
     }
 
-    override suspend fun details(bookId: String): BookDetails = load(localIdOf(bookId))
+    /**
+     * У книги агрегатора в идентификаторе спрятан адрес, по которому её брать, и — если
+     * сервер не дал отдельного адреса — её номер в ответе поиска после решётки.
+     */
+    override suspend fun details(bookId: String): BookDetails {
+        val target = localIdOf(bookId)
+        val url = target.substringBefore('#')
+        val wanted = target.substringAfter('#', "")
+
+        val response = Http.get(url)
+        AggregatorFormat.parseBook(response, id, wanted)?.let { return it }
+        return fromPage(response, url)
+    }
 
     /** Открыть источник целиком, не набирая запрос — с экрана «Источники». */
-    suspend fun open(): BookDetails = load(source.urlFor(""))
+    suspend fun open(): BookDetails {
+        val url = source.urlFor("")
+        return fromPage(Http.get(url), url)
+    }
 
-    private suspend fun load(url: String): BookDetails {
-        val found = MediaScraper.scrape(Http.get(url), fallbackTitle = source.name)
+    private fun fromPage(response: Http.Response, url: String): BookDetails {
+        val found = MediaScraper.scrape(response, fallbackTitle = source.name)
         return found.toBookDetails(
             bookId = composeBookId(id, url),
             providerId = id,

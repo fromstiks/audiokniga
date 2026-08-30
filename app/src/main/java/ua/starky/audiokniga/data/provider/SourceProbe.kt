@@ -38,6 +38,18 @@ object SourceProbe {
             return Report(false, "Адрес не отвечает: ${e.message ?: "неизвестная ошибка"}")
         }
 
+        // Свой сервер-агрегатор отвечает списком книг, а не файлами одной страницы —
+        // и проверка должна показывать именно книги, иначе выглядит как неудача.
+        val aggregated = runCatching { AggregatorFormat.parseSearch(response, "probe") }.getOrNull()
+        if (!aggregated.isNullOrEmpty()) {
+            val chapters = aggregated.sumOf { it.chaptersHint }
+            return Report(
+                true,
+                "Агрегатор ответил: книг ${aggregated.size}, глав $chapters · " +
+                    "«${aggregated.first().book.title.take(40)}»",
+            )
+        }
+
         val found = runCatching { MediaScraper.scrape(response, fallbackTitle = source.name) }.getOrNull()
         if (found != null) {
             val what = if (source.isSearchTemplate) "По запросу нашлось" else "Нашлось"

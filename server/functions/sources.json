@@ -1,0 +1,31 @@
+{
+  "builtin": {
+    "archive": true,
+    "librivox": true,
+    "limit": 10
+  },
+
+  "feeds": [
+    {
+      "id": "example-feed",
+      "name": "Пример ленты",
+      "enabled": false,
+      "url": "https://example.org/feed.xml"
+    }
+  ],
+
+  "sites": [
+    {
+      "id": "example-site",
+      "name": "Пример каталога",
+      "enabled": false,
+      "search_url": "https://example.org/?s={q}",
+      "result": "article",
+      "title": "h2 a",
+      "link": "h2 a",
+      "author": ".author",
+      "cover": "img",
+      "limit": 8
+    }
+  ]
+}

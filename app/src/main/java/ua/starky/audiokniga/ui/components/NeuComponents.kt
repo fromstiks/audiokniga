@@ -224,7 +224,10 @@ fun NeuSlider(
                 .padding(start = 0.dp)
                 .offsetForProgress(animated, widthPx, knobSize)
                 .size(knobSize)
-                .neuRaised(CircleShape, elevation = 3.dp)
+                // Раньше «шляпка» красилась в цвет фона и терялась на нём — видна была
+                // только по тонкой тени. Цвет акцента делает её заметной саму по себе,
+                // не только по заполненной части жёлоба.
+                .neuRaised(CircleShape, elevation = 3.dp, background = fillColor)
         )
     }
 }

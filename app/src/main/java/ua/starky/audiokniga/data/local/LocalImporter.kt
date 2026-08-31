@@ -173,7 +173,7 @@ object LocalImporter {
      * прочих: так её обычно и называют сборщики книг. Другой картинки может и не
      * найтись, а любая обложка лучше заглушки с инициалами.
      */
-    private fun coverIn(files: List<DocumentFile>): Uri? {
+    private fun coverIn(files: Array<out DocumentFile>): Uri? {
         val images = files.filter { it.isFile && it.name.isImage() }
         if (images.isEmpty()) return null
         val named = setOf("cover", "folder", "album", "art")

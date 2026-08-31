@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
@@ -49,10 +50,37 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        session = MediaSession.Builder(this, player)
+        session = MediaSession.Builder(this, hideTrackSkip(player))
             .setCallback(SkipCallback(player))
             .setCustomLayout(buildLayout())
             .build()
+    }
+
+    /**
+     * ExoPlayer сам объявляет «предыдущий/следующий трек» доступными, раз в очереди
+     * больше одной главы, — и ровно эти кнопки система рисует на заблокированном
+     * экране рядом с play, даже когда набор действий переопределён своим. Слушать
+     * книгу листанием треков почти всегда не то, что нужно, поэтому обе команды
+     * скрыты на уровне плеера: тогда их не увидит ни уведомление, ни Bluetooth,
+     * ни один другой контроллер. Прямой переход на главу по индексу (открытие книги,
+     * нажатие по строке в оглавлении) идёт другой командой и не задет.
+     */
+    private fun hideTrackSkip(player: ExoPlayer): Player = object : ForwardingPlayer(player) {
+        private val hidden = setOf(
+            Player.COMMAND_SEEK_TO_NEXT,
+            Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM,
+            Player.COMMAND_SEEK_TO_PREVIOUS,
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+        )
+
+        override fun getAvailableCommands(): Player.Commands {
+            val builder = super.getAvailableCommands().buildUpon()
+            hidden.forEach { builder.remove(it) }
+            return builder.build()
+        }
+
+        override fun isCommandAvailable(command: Int): Boolean =
+            command !in hidden && super.isCommandAvailable(command)
     }
 
     /** Подписи пересобираются под текущий шаг: «20» и «30» — разные кнопки. */

@@ -2,6 +2,7 @@ package ua.starky.audiokniga.playback
 
 import android.content.ComponentName
 import android.content.Context
+import android.net.Uri
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -106,8 +107,21 @@ class PlayerConnection(
         )
     }
 
-    fun setQueue(bookId: String, chapters: List<Chapter>, startIndex: Int, startPositionMs: Long, play: Boolean) {
+    /**
+     * [coverUrl] уходит в артворк каждой главы — экран блокировки и уведомление берут
+     * обложку из метаданных текущего MediaItem, а не откуда-то ещё, и без нее там
+     * пусто, даже если сама книга обложку давно показывает.
+     */
+    fun setQueue(
+        bookId: String,
+        chapters: List<Chapter>,
+        startIndex: Int,
+        startPositionMs: Long,
+        play: Boolean,
+        coverUrl: String? = null,
+    ) {
         val player = controller ?: return
+        val artwork = coverUrl?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
         val items = chapters.map { chapter ->
             MediaItem.Builder()
                 .setMediaId(chapter.id)
@@ -116,6 +130,7 @@ class PlayerConnection(
                     MediaMetadata.Builder()
                         .setTitle(chapter.title)
                         .setArtist(bookId)
+                        .setArtworkUri(artwork)
                         .setIsPlayable(true)
                         .build()
                 )

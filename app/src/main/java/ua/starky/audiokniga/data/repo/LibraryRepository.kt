@@ -247,6 +247,10 @@ class LibraryRepository(context: Context) {
     /** Книга, открытая последней. Нужна виджету: он умеет запускать её без экранов. */
     suspend fun lastOpenedBookId(): String? = withContext(Dispatchers.IO) { books.lastOpenedId() }
 
+    /** Разовое чтение книги — нужно там, где Flow был бы избыточен: например, чтобы
+     *  взять обложку для обложки в уведомлении плеера при сборке очереди. */
+    suspend fun bookOf(bookId: String): Book? = withContext(Dispatchers.IO) { books.getBook(bookId)?.toBook() }
+
     suspend fun remove(bookId: String) = withContext(Dispatchers.IO) {
         chapters.deleteForBook(bookId)
         playlists.removeBookEverywhere(bookId)

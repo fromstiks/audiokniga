@@ -7,14 +7,24 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.Canvas
 import android.graphics.LinearGradient
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Build
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.toBitmapOrNull
+import coil.imageLoader
+import coil.request.ImageRequest
+import coil.request.SuccessResult
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import ua.starky.audiokniga.MainActivity
 import ua.starky.audiokniga.R
 import ua.starky.audiokniga.app
@@ -25,6 +35,7 @@ data class WidgetSnapshot(
     val title: String? = null,
     val subtitle: String? = null,
     val playing: Boolean = false,
+    val coverUrl: String? = null,
 )
 
 /**
@@ -41,8 +52,7 @@ data class WidgetSnapshot(
 class PlayerWidget : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        val views = buildViews(context, snapshot)
-        ids.forEach { id -> manager.updateAppWidget(id, views) }
+        pushViews(context, snapshot, coverFor(snapshot.coverUrl))
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -61,6 +71,8 @@ class PlayerWidget : AppWidgetProvider() {
         const val ACTION_REWIND = "ua.starky.audiokniga.widget.REWIND"
         const val ACTION_FORWARD = "ua.starky.audiokniga.widget.FORWARD"
 
+        private const val COVER_SIZE = 132
+
         private val COMMANDS = mapOf(
             ACTION_PLAY_PAUSE to WidgetAction.PLAY_PAUSE,
             ACTION_REWIND to WidgetAction.REWIND,
@@ -74,18 +86,49 @@ class PlayerWidget : AppWidgetProvider() {
         @Volatile
         private var snapshot = WidgetSnapshot()
 
+        /** Последняя загруженная обложка вместе с адресом, по которому её взяли. */
+        @Volatile
+        private var cover: Pair<String, Bitmap>? = null
+
+        /** Живёт вместе с процессом приложения — сама загрузка ничего не блокирует. */
+        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+        private fun coverFor(url: String?): Bitmap? = cover?.takeIf { it.first == url }?.second
+
         fun refresh(context: Context, state: WidgetSnapshot) {
             snapshot = state
+            // Рисуем сразу — плиткой с инициалами или уже загруженной для этого адреса
+            // обложкой, чтобы виджет не мигал пустотой, пока настоящая картинка грузится.
+            pushViews(context, state, coverFor(state.coverUrl))
+
+            val url = state.coverUrl
+            if (url == null) {
+                cover = null
+                return
+            }
+            if (cover?.first == url) return
+
+            val appContext = context.applicationContext
+            scope.launch {
+                val bitmap = runCatching { loadCover(appContext, url) }.getOrNull() ?: return@launch
+                cover = url to bitmap
+                // Пока грузили, снимок мог смениться на другую книгу — рисовать
+                // устаревшую обложку поверх уже нового состояния не нужно.
+                if (snapshot.coverUrl == url) pushViews(appContext, snapshot, bitmap)
+            }
+        }
+
+        private fun pushViews(context: Context, state: WidgetSnapshot, cover: Bitmap?) {
             val manager = AppWidgetManager.getInstance(context) ?: return
             val ids = runCatching {
                 manager.getAppWidgetIds(ComponentName(context, PlayerWidget::class.java))
             }.getOrNull() ?: return
             if (ids.isEmpty()) return
-            val views = buildViews(context, state)
+            val views = buildViews(context, state, cover)
             ids.forEach { manager.updateAppWidget(it, views) }
         }
 
-        private fun buildViews(context: Context, state: WidgetSnapshot): RemoteViews {
+        private fun buildViews(context: Context, state: WidgetSnapshot, cover: Bitmap?): RemoteViews {
             val views = RemoteViews(context.packageName, R.layout.widget_player)
 
             views.setTextViewText(
@@ -100,7 +143,7 @@ class PlayerWidget : AppWidgetProvider() {
                 R.id.widget_play,
                 if (state.playing) R.drawable.ic_media_pause else R.drawable.ic_media_play,
             )
-            views.setImageViewBitmap(R.id.widget_cover, coverTile(context, state.title))
+            views.setImageViewBitmap(R.id.widget_cover, cover ?: coverTile(context, state.title))
 
             views.setOnClickPendingIntent(R.id.widget_rewind, command(context, ACTION_REWIND))
             views.setOnClickPendingIntent(R.id.widget_play, command(context, ACTION_PLAY_PAUSE))
@@ -114,12 +157,53 @@ class PlayerWidget : AppWidgetProvider() {
         }
 
         /**
-         * Обложка рисуется на месте, а не грузится из сети: виджет обновляется в чужом
-         * процессе и ждать загрузку там нечем. Плитка с началом названия — то же, что
-         * приложение показывает вместо отсутствующей обложки.
+         * Настоящая обложка — той же библиотекой (Coil), что и остальное приложение,
+         * поэтому источник ей не важен: файл с устройства (content://), локальный путь
+         * или адрес в сети. allowHardware(false) обязателен — аппаратный битмап нельзя
+         * ни прочитать пиксель за пикселем, ни вписать в RemoteViews.
+         */
+        private suspend fun loadCover(context: Context, url: String): Bitmap? {
+            val request = ImageRequest.Builder(context)
+                .data(url)
+                .allowHardware(false)
+                .build()
+            val result = context.imageLoader.execute(request) as? SuccessResult ?: return null
+            val source = result.drawable.toBitmapOrNull() ?: return null
+            return roundedCrop(source)
+        }
+
+        /** Та же скруглённая плитка, что и у плитки с инициалами, только с фотографией. */
+        private fun roundedCrop(source: Bitmap): Bitmap {
+            val size = COVER_SIZE
+            val output = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(output)
+            val radius = size * 0.24f
+
+            // centerCrop вручную: BitmapShader не масштабирует источник сам.
+            val scale = maxOf(size / source.width.toFloat(), size / source.height.toFloat())
+            val dx = (size - source.width * scale) / 2f
+            val dy = (size - source.height * scale) / 2f
+            val matrix = Matrix().apply {
+                setScale(scale, scale)
+                postTranslate(dx, dy)
+            }
+
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                shader = BitmapShader(source, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply {
+                    setLocalMatrix(matrix)
+                }
+            }
+            canvas.drawRoundRect(RectF(0f, 0f, size.toFloat(), size.toFloat()), radius, radius, paint)
+            return output
+        }
+
+        /**
+         * Плитка с инициалами — пока настоящей обложки нет вовсе или она ещё грузится.
+         * Рисуется на месте, без сети: то же самое, что приложение показывает вместо
+         * отсутствующей обложки на других экранах.
          */
         private fun coverTile(context: Context, title: String?): Bitmap {
-            val size = 132
+            val size = COVER_SIZE
             val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
             val radius = size * 0.24f

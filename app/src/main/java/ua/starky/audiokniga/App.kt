@@ -77,6 +77,7 @@ class App : Application() {
                     title = book?.title,
                     subtitle = state.chapterTitle ?: book?.author,
                     playing = state.isPlaying,
+                    coverUrl = book?.coverUrl,
                 )
             }
                 // Позиция обновляется дважды в секунду, а виджету от неё ни холодно

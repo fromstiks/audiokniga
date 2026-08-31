@@ -42,10 +42,12 @@ object LocalImporter {
             .sortedWith(compareBy(NaturalOrder) { it.name.orEmpty() })
         if (files.isEmpty()) return@withContext null
 
+        val (guessedAuthor, guessedTitle) = parseFolderName(tree.name)
         build(
             context = context,
             bookId = "$PROVIDER_ID:${treeUri}",
-            fallbackTitle = tree.name?.cleanUp() ?: "Книга с устройства",
+            fallbackTitle = guessedTitle,
+            fallbackAuthor = guessedAuthor,
             sourceUrl = treeUri.toString(),
             items = files.map { it.uri to it.name.orEmpty() },
             coverUri = coverIn(children),
@@ -74,10 +76,12 @@ object LocalImporter {
             .sortedWith(compareBy(NaturalOrder) { it.name.orEmpty() })
 
         if (audio.isNotEmpty()) {
+            val (guessedAuthor, guessedTitle) = parseFolderName(dir.name)
             into += build(
                 context = context,
                 bookId = "$PROVIDER_ID:${dir.uri}",
-                fallbackTitle = dir.name?.cleanUp() ?: "Книга с устройства",
+                fallbackTitle = guessedTitle,
+                fallbackAuthor = guessedAuthor,
                 sourceUrl = dir.uri.toString(),
                 items = audio.map { it.uri to it.name.orEmpty() },
                 coverUri = coverIn(children),
@@ -100,12 +104,13 @@ object LocalImporter {
         val cover = named.firstOrNull { it.second.isImage() }?.first
 
         // Имя книги берём у первого файла: общего родителя у произвольного выбора нет.
-        val title = items.first().second.substringBeforeLast('.').cleanUp()
+        val (guessedAuthor, guessedTitle) = parseFolderName(items.first().second.substringBeforeLast('.'))
         build(
             context = context,
             // Список файлов может быть любым, поэтому опираемся на первый адрес.
             bookId = "$PROVIDER_ID:${items.first().first}",
-            fallbackTitle = title.ifBlank { "Книга с устройства" },
+            fallbackTitle = guessedTitle,
+            fallbackAuthor = guessedAuthor,
             sourceUrl = items.first().first.toString(),
             items = items,
             coverUri = cover,
@@ -116,6 +121,7 @@ object LocalImporter {
         context: Context,
         bookId: String,
         fallbackTitle: String,
+        fallbackAuthor: String? = null,
         sourceUrl: String,
         items: List<Pair<Uri, String>>,
         coverUri: Uri? = null,
@@ -159,7 +165,9 @@ object LocalImporter {
                 id = bookId,
                 providerId = PROVIDER_ID,
                 title = album?.takeIf { it.isNotBlank() } ?: fallbackTitle,
-                author = artist?.takeIf { it.isNotBlank() } ?: "С устройства",
+                author = artist?.takeIf { it.isNotBlank() }
+                    ?: fallbackAuthor?.takeIf { it.isNotBlank() }
+                    ?: "С устройства",
                 coverUrl = coverUri?.toString(),
                 durationMs = chapters.sumOf { it.durationMs },
                 sourceUrl = sourceUrl,
@@ -237,6 +245,28 @@ object LocalImporter {
     /** «01_glava-pervaya» читается плохо, а показывать это пользователю. */
     private fun String.cleanUp(): String =
         replace('_', ' ').replace('-', ' ').replace(Regex("\\s+"), " ").trim()
+
+    private val FOLDER_NAME_SEPARATORS = listOf(" — ", " – ", " - ")
+
+    /**
+     * «Автор — Название» — самый частый способ подписать папку с аудиокнигой (в этом
+     * же виде их устроена и папка-библиотека при полном сканировании). Без тегов это
+     * единственная зацепка для автора: без неё книга молча подписывалась бы
+     * «С устройства», а название — сырым именем папки или файла.
+     *
+     * Делить нужно до [cleanUp]: она сама заменяет дефис на пробел и стёрла бы
+     * разделитель раньше, чем мы успеем на него посмотреть.
+     */
+    private fun parseFolderName(raw: String?): Pair<String?, String> {
+        val name = raw.orEmpty()
+        for (separator in FOLDER_NAME_SEPARATORS) {
+            val parts = name.split(separator, limit = 2)
+            if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
+                return parts[0].cleanUp() to parts[1].cleanUp()
+            }
+        }
+        return null to name.cleanUp().ifBlank { "Книга с устройства" }
+    }
 
     /**
      * Естественный порядок: «Глава 2» должна идти перед «Глава 10».

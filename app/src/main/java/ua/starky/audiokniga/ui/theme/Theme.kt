@@ -35,20 +35,26 @@ data class NeuColors(
     val isDark: Boolean,
 )
 
+/**
+ * Светлая тема — песочная: тёплый бежевый фон вместо нейтрально-серого, а из акцентов —
+ * светло-голубой. offline (скачано, лежит на устройстве) остаётся тёплым золотистым —
+ * так он не путается с новым синим акцентом.
+ */
 val LightNeu = NeuColors(
-    background = Color(0xFFE7E3DA),
-    highlight = Color(0xFFFCFAF6),
-    shadow = Color(0xFFC0BAAC),
+    background = Color(0xFFF0E2C4),
+    highlight = Color(0xFFFFF9E0),
+    shadow = Color(0xFFC9B996),
     ink = Color(0xFF2B2924),
     inkMuted = Color(0xFF726D62),
     inkFaint = Color(0xFF989285),
-    accent = Color(0xFF2F7370),
+    accent = Color(0xFF1B6893),
     onAccent = Color(0xFFFFFFFF),
     offline = Color(0xFF8A6F3D),
     line = Color(0x1A2B2924),
     isDark = false,
 )
 
+/** Тёмная тема — фон прежний, акцент сменился на красный. */
 val DarkNeu = NeuColors(
     background = Color(0xFF24272B),
     highlight = Color(0xFF2E3238),
@@ -56,8 +62,8 @@ val DarkNeu = NeuColors(
     ink = Color(0xFFE8EAEC),
     inkMuted = Color(0xFF9BA1A8),
     inkFaint = Color(0xFF71777E),
-    accent = Color(0xFF4FBFB2),
-    onAccent = Color(0xFF10201F),
+    accent = Color(0xFFE0605C),
+    onAccent = Color(0xFF2A1210),
     offline = Color(0xFFD6A75B),
     line = Color(0x1AE8EAEC),
     isDark = true,

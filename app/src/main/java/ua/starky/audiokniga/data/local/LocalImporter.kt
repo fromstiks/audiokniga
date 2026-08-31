@@ -28,12 +28,16 @@ object LocalImporter {
         "mp3", "m4a", "m4b", "ogg", "oga", "opus", "aac", "wav", "flac", "mp4",
     )
 
+    /** Обложка кладётся файлом рядом с главами — так делают большинство сборщиков. */
+    private val IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "bmp")
+
     /** Папка целиком — одна книга, файлы внутри становятся главами по порядку имён. */
     suspend fun fromFolder(context: Context, treeUri: Uri): BookDetails? = withContext(Dispatchers.IO) {
         persist(context, treeUri)
         val tree = DocumentFile.fromTreeUri(context, treeUri) ?: return@withContext null
+        val children = tree.listFiles()
 
-        val files = tree.listFiles()
+        val files = children
             .filter { it.isFile && it.name.isAudio() }
             .sortedWith(compareBy(NaturalOrder) { it.name.orEmpty() })
         if (files.isEmpty()) return@withContext null
@@ -44,6 +48,7 @@ object LocalImporter {
             fallbackTitle = tree.name?.cleanUp() ?: "Книга с устройства",
             sourceUrl = treeUri.toString(),
             items = files.map { it.uri to it.name.orEmpty() },
+            coverUri = coverIn(children),
         )
     }
 
@@ -75,6 +80,7 @@ object LocalImporter {
                 fallbackTitle = dir.name?.cleanUp() ?: "Книга с устройства",
                 sourceUrl = dir.uri.toString(),
                 items = audio.map { it.uri to it.name.orEmpty() },
+                coverUri = coverIn(children),
             )
         }
 
@@ -86,9 +92,12 @@ object LocalImporter {
         if (uris.isEmpty()) return@withContext null
         uris.forEach { persist(context, it) }
 
-        val items = uris.map { uri -> uri to (displayName(context, uri) ?: uri.lastPathSegment.orEmpty()) }
-            .filter { it.second.isAudio() }
+        val named = uris.map { uri -> uri to (displayName(context, uri) ?: uri.lastPathSegment.orEmpty()) }
+        val items = named.filter { it.second.isAudio() }
         if (items.isEmpty()) return@withContext null
+        // Среди выбранных файлов могла оказаться и обложка — это не ошибка выбора,
+        // а обычное дело: папку часто выбирают файлами целиком, вместе с картинкой.
+        val cover = named.firstOrNull { it.second.isImage() }?.first
 
         // Имя книги берём у первого файла: общего родителя у произвольного выбора нет.
         val title = items.first().second.substringBeforeLast('.').cleanUp()
@@ -99,6 +108,7 @@ object LocalImporter {
             fallbackTitle = title.ifBlank { "Книга с устройства" },
             sourceUrl = items.first().first.toString(),
             items = items,
+            coverUri = cover,
         )
     }
 
@@ -108,6 +118,7 @@ object LocalImporter {
         fallbackTitle: String,
         sourceUrl: String,
         items: List<Pair<Uri, String>>,
+        coverUri: Uri? = null,
     ): BookDetails {
         // Один и тот же файл не должен попасть в книгу дважды.
         val unique = items.distinctBy { it.first.toString() }
@@ -149,11 +160,25 @@ object LocalImporter {
                 providerId = PROVIDER_ID,
                 title = album?.takeIf { it.isNotBlank() } ?: fallbackTitle,
                 author = artist?.takeIf { it.isNotBlank() } ?: "С устройства",
+                coverUrl = coverUri?.toString(),
                 durationMs = chapters.sumOf { it.durationMs },
                 sourceUrl = sourceUrl,
             ),
             chapters = chapters,
         )
+    }
+
+    /**
+     * Обложка среди файлов папки. Явно названная — cover/folder/album — приоритетнее
+     * прочих: так её обычно и называют сборщики книг. Другой картинки может и не
+     * найтись, а любая обложка лучше заглушки с инициалами.
+     */
+    private fun coverIn(files: List<DocumentFile>): Uri? {
+        val images = files.filter { it.isFile && it.name.isImage() }
+        if (images.isEmpty()) return null
+        val named = setOf("cover", "folder", "album", "art")
+        val preferred = images.firstOrNull { it.name.orEmpty().substringBeforeLast('.').lowercase() in named }
+        return (preferred ?: images.first()).uri
     }
 
     private data class Tags(
@@ -202,6 +227,11 @@ object LocalImporter {
     private fun String?.isAudio(): Boolean {
         val name = this?.substringAfterLast('.', "")?.lowercase() ?: return false
         return name in AUDIO_EXTENSIONS
+    }
+
+    private fun String?.isImage(): Boolean {
+        val name = this?.substringAfterLast('.', "")?.lowercase() ?: return false
+        return name in IMAGE_EXTENSIONS
     }
 
     /** «01_glava-pervaya» читается плохо, а показывать это пользователю. */

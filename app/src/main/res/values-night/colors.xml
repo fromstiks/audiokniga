@@ -3,7 +3,8 @@
     <color name="widget_surface">#D924272B</color>
     <color name="widget_ink">#E8EAEC</color>
     <color name="widget_ink_muted">#9BA1A8</color>
-    <color name="widget_accent">#4FBFB2</color>
+    <color name="widget_accent">#E0605C</color>
     <color name="widget_cover_top">#2E3238</color>
     <color name="widget_cover_bottom">#1D2529</color>
+    <color name="widget_cover_ink">#EFE6D4</color>
 </resources>

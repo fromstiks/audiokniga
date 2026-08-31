@@ -141,8 +141,11 @@ class PlayerWidget : AppWidgetProvider() {
                 .joinToString("") { it.first().uppercase() }
                 .ifBlank { "А" }
 
+            // Плитка тёмная в обеих темах, поэтому текст на ней всегда светлый — цветом
+            // акцента здесь его красить нельзя: на тёмно-синей плитке синие буквы не
+            // видны вовсе, то же ждало бы и новый красный акцент.
             val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = ContextCompat.getColor(context, R.color.widget_accent)
+                color = ContextCompat.getColor(context, R.color.widget_cover_ink)
                 textSize = size * 0.36f
                 textAlign = Paint.Align.CENTER
                 isFakeBoldText = true

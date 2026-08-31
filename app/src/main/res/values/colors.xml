@@ -7,10 +7,13 @@
   Фон полупрозрачный: виджет лежит на обоях, и сплошная плашка смотрится наклейкой.
 -->
 <resources>
-    <color name="widget_surface">#D9E7E3DA</color>
+    <color name="widget_surface">#D9F0E2C4</color>
     <color name="widget_ink">#2B2924</color>
     <color name="widget_ink_muted">#726D62</color>
-    <color name="widget_accent">#2F7370</color>
+    <color name="widget_accent">#1B6893</color>
     <color name="widget_cover_top">#3C4A55</color>
     <color name="widget_cover_bottom">#2E4340</color>
+    <!-- Инициалы на плитке обложки: плитка тёмная в обеих темах, поэтому текст на ней
+         всегда светлый, а не цвета акцента — иначе синий на тёмно-синем не читался бы. -->
+    <color name="widget_cover_ink">#EFE6D4</color>
 </resources>

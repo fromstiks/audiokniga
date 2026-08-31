@@ -143,8 +143,8 @@ class PlaybackController(
         }
 
         connection.setSourceMode(mode)
-        val coverUrl = repo.bookOf(bookId)?.coverUrl
-        connection.setQueue(bookId, chapters, startIndex, startPosition, play, coverUrl)
+        val book = repo.bookOf(bookId)
+        connection.setQueue(bookId, chapters, startIndex, startPosition, play, book?.title, book?.coverUrl)
         queuedBookId = bookId
         queuedMode = mode
         _notice.value = null

@@ -3,6 +3,7 @@ package ua.starky.audiokniga.playback
 import android.content.ComponentName
 import android.content.Context
 import android.net.Uri
+import android.os.Bundle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -99,7 +100,8 @@ class PlayerConnection(
             speed = player.playbackParameters.speed,
             // Процесс приложения могли убить, пока сервис играл дальше. Тогда очередь
             // ставили не мы, и книгу остаётся узнать по метаданным главы.
-            bookId = _state.value.bookId ?: player.currentMediaItem?.mediaMetadata?.artist?.toString(),
+            bookId = _state.value.bookId
+                ?: player.currentMediaItem?.mediaMetadata?.extras?.getString(EXTRA_BOOK_ID),
             chapterId = player.currentMediaItem?.mediaId,
             chapterTitle = player.currentMediaItem?.mediaMetadata?.title?.toString(),
             queueSize = player.mediaItemCount,
@@ -108,9 +110,11 @@ class PlayerConnection(
     }
 
     /**
-     * [coverUrl] уходит в артворк каждой главы — экран блокировки и уведомление берут
-     * обложку из метаданных текущего MediaItem, а не откуда-то ещё, и без нее там
-     * пусто, даже если сама книга обложку давно показывает.
+     * [bookTitle] и [coverUrl] уходят в подпись и артворк каждой главы — экран
+     * блокировки и уведомление берут их из метаданных текущего MediaItem, а не
+     * откуда-то ещё. bookId раньше клали туда же, в поле artist, — оно и попадало
+     * на экран блокировки поверх названия книги. Теперь bookId лежит в extras,
+     * которые система не показывает, а artist — настоящее название книги.
      */
     fun setQueue(
         bookId: String,
@@ -118,10 +122,12 @@ class PlayerConnection(
         startIndex: Int,
         startPositionMs: Long,
         play: Boolean,
+        bookTitle: String? = null,
         coverUrl: String? = null,
     ) {
         val player = controller ?: return
         val artwork = coverUrl?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        val extras = Bundle().apply { putString(EXTRA_BOOK_ID, bookId) }
         val items = chapters.map { chapter ->
             MediaItem.Builder()
                 .setMediaId(chapter.id)
@@ -129,8 +135,9 @@ class PlayerConnection(
                 .setMediaMetadata(
                     MediaMetadata.Builder()
                         .setTitle(chapter.title)
-                        .setArtist(bookId)
+                        .setArtist(bookTitle?.takeIf { it.isNotBlank() })
                         .setArtworkUri(artwork)
+                        .setExtras(extras)
                         .setIsPlayable(true)
                         .build()
                 )
@@ -225,5 +232,10 @@ class PlayerConnection(
         controller?.removeListener(listener)
         controller?.release()
         controller = null
+    }
+
+    private companion object {
+        /** Ключ, под которым bookId лежит в extras метаданных главы. */
+        const val EXTRA_BOOK_ID = "book_id"
     }
 }

@@ -131,10 +131,15 @@ class PlaybackController(
             // Позицию внутри главы имеет смысл сохранять только если это та же глава.
             startPosition = if (found >= 0) state.value.positionMs else 0L
         } else {
-            val (savedIndex, savedPosition) = repo.lastPosition(bookId)
-            val found = chapters.indexOfFirst { it.index == savedIndex }
+            // Главу ищем по идентификатору. Номер зависит и от выбранного порядка глав,
+            // и от режима источника — по нему книга открывалась не на том месте.
+            val saved = repo.lastPosition(bookId)
+            val byId = chapters.indexOfFirst { it.id == saved.chapterId }
+            // Записи, сделанные до появления идентификатора, хранят только место в
+            // очереди. Это всё-таки ближе к правде, чем начало книги.
+            val found = if (byId >= 0) byId else saved.queueIndex.takeIf { it in chapters.indices } ?: -1
             startIndex = found.coerceAtLeast(0)
-            startPosition = if (found >= 0) savedPosition else 0L
+            startPosition = if (found >= 0) saved.positionMs else 0L
         }
 
         connection.setSourceMode(mode)
@@ -357,7 +362,12 @@ class PlaybackController(
     suspend fun saveProgress() {
         val current = state.value
         val bookId = current.bookId ?: return
-        repo.saveProgress(bookId, current.chapterIndex, current.positionMs)
+        repo.saveProgress(
+            bookId = bookId,
+            chapterId = current.chapterId.orEmpty(),
+            queueIndex = current.chapterIndex,
+            positionMs = current.positionMs,
+        )
     }
 
     /** Позиция сохраняется на ходу: приложение могут закрыть в любой момент. */

@@ -19,8 +19,10 @@ data class BookEntity(
     val sourceMode: Int,
     val addedAt: Long,
     val lastOpenedAt: Long,
-    /** Индекс главы, на которой остановились. */
+    /** Место в очереди, на котором остановились. Номер зависит от выбранного порядка
+     *  глав и от режима источника, поэтому главное здесь — идентификатор. */
     val lastChapterIndex: Int,
+    val lastChapterId: String = "",
     val lastPositionMs: Long,
     val favorite: Boolean = false,
     /** Порядок глав, выбранный для этой книги. Хранится как ordinal ChapterOrder. */

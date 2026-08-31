@@ -33,6 +33,13 @@ import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.data.provider.RssProvider
 import java.util.UUID
 
+/** Место, на котором книгу оставили в прошлый раз. */
+data class LastPosition(
+    val chapterId: String,
+    val queueIndex: Int,
+    val positionMs: Long,
+)
+
 /** Что ответил один источник. Вкладки поиска строятся прямо по этому списку. */
 data class SourceOutcome(
     val providerId: String,
@@ -179,6 +186,7 @@ class LibraryRepository(context: Context) {
                 addedAt = existing?.addedAt ?: now,
                 lastOpenedAt = now,
                 lastChapterIndex = existing?.lastChapterIndex ?: 0,
+                lastChapterId = existing?.lastChapterId ?: "",
                 lastPositionMs = existing?.lastPositionMs ?: 0L,
                 // Повторное открытие книги не должно снимать звёздочку и сбивать порядок.
                 favorite = existing?.favorite ?: false,
@@ -219,12 +227,21 @@ class LibraryRepository(context: Context) {
         SourceMode.fromOrdinalOrAuto(books.getBook(bookId)?.sourceMode ?: 0)
     }
 
-    suspend fun saveProgress(bookId: String, chapterIndex: Int, positionMs: Long) =
-        books.saveProgress(bookId, chapterIndex, positionMs, System.currentTimeMillis())
+    /**
+     * Где книгу оставили. [chapterId] здесь главный, а [queueIndex] — только запасной
+     * ориентир: номер главы в очереди зависит от выбранного порядка глав и от режима
+     * источника, а идентификатор не зависит ни от чего.
+     */
+    suspend fun saveProgress(bookId: String, chapterId: String, queueIndex: Int, positionMs: Long) =
+        books.saveProgress(bookId, chapterId, queueIndex, positionMs, System.currentTimeMillis())
 
-    suspend fun lastPosition(bookId: String): Pair<Int, Long> = withContext(Dispatchers.IO) {
+    suspend fun lastPosition(bookId: String): LastPosition = withContext(Dispatchers.IO) {
         val book = books.getBook(bookId)
-        (book?.lastChapterIndex ?: 0) to (book?.lastPositionMs ?: 0L)
+        LastPosition(
+            chapterId = book?.lastChapterId.orEmpty(),
+            queueIndex = book?.lastChapterIndex ?: 0,
+            positionMs = book?.lastPositionMs ?: 0L,
+        )
     }
 
     /** Книга, открытая последней. Нужна виджету: он умеет запускать её без экранов. */

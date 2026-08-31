@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistBookEntity::class,
         BookmarkEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -94,13 +94,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Место остановки запоминается идентификатором главы.
+         *
+         * Раньше в lastChapterIndex писали то номер главы в книге, то её место в
+         * очереди — а это разные числа, как только главы отсортированы не как в
+         * папке или часть из них не скачана. При возврате к книге плеер открывал
+         * не ту главу.
+         */
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `books` ADD COLUMN `lastChapterId` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 AppDatabase::class.java,
                 "audiokniga.db",
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
                 .also { instance = it }
         }

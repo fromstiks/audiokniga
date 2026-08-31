@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -316,9 +317,13 @@ fun PlayerScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 18.dp),
             ) {
-                items(state.chapters, key = { it.chapter.id }) { item ->
+                itemsIndexed(state.chapters, key = { _, item -> item.chapter.id }) { index, item ->
                     ChapterRow(
                         item = item,
+                        // Номер — место в этом самом списке, а не номер файла в книге.
+                        // Список и очередь плеера идут в одном порядке, поэтому только
+                        // такой номер и совпадает с тем, что заиграет следующим.
+                        number = index + 1,
                         local = state.isLocal,
                         onPlay = { viewModel.playChapter(item.chapter) },
                         onDownload = { viewModel.downloadChapter(item.chapter) },
@@ -789,6 +794,7 @@ private fun SourceSwitch(mode: SourceMode, onSelect: (SourceMode) -> Unit) {
 @Composable
 private fun ChapterRow(
     item: ChapterUi,
+    number: Int,
     local: Boolean,
     onPlay: () -> Unit,
     onDownload: () -> Unit,
@@ -809,7 +815,7 @@ private fun ChapterRow(
         horizontalArrangement = Arrangement.spacedBy(11.dp),
     ) {
         Text(
-            text = "%02d".format(item.chapter.index + 1),
+            text = "%02d".format(number),
             color = if (item.isCurrent) c.accent else c.inkFaint,
             fontSize = 11.sp,
             fontWeight = FontWeight.ExtraBold,

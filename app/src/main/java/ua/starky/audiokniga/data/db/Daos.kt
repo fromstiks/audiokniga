@@ -27,8 +27,17 @@ interface BookDao {
     @Query("UPDATE books SET sourceMode = :mode WHERE id = :bookId")
     suspend fun setSourceMode(bookId: String, mode: Int)
 
-    @Query("UPDATE books SET lastChapterIndex = :chapterIndex, lastPositionMs = :positionMs, lastOpenedAt = :now WHERE id = :bookId")
-    suspend fun saveProgress(bookId: String, chapterIndex: Int, positionMs: Long, now: Long)
+    @Query(
+        "UPDATE books SET lastChapterId = :chapterId, lastChapterIndex = :chapterIndex, " +
+            "lastPositionMs = :positionMs, lastOpenedAt = :now WHERE id = :bookId"
+    )
+    suspend fun saveProgress(
+        bookId: String,
+        chapterId: String,
+        chapterIndex: Int,
+        positionMs: Long,
+        now: Long,
+    )
 
     @Query("UPDATE books SET favorite = :favorite WHERE id = :bookId")
     suspend fun setFavorite(bookId: String, favorite: Boolean)

@@ -176,8 +176,14 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
         viewModelScope.launch {
             val next = repo.chapterOrderOf(bookId).next()
             repo.setChapterOrder(bookId, next)
-            runCatching { playback.rebuildQueue(bookId) }
-            message.value = "Порядок глав: ${next.label}"
+            // Список пересобирается сам, а очередь плеера — только здесь. Если это
+            // не удалось, молчать нельзя: на экране будет один порядок, а играть
+            // книга будет в другом, и понять это со стороны невозможно.
+            val rebuilt = runCatching { playback.rebuildQueue(bookId) }
+            message.value = rebuilt.fold(
+                onSuccess = { "Порядок глав: ${next.label}" },
+                onFailure = { "Порядок изменён, но плеер не перестроился: ${it.message ?: "сбой"}" },
+            )
         }
     }
 
@@ -210,7 +216,13 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
 
     fun playChapter(chapter: Chapter) {
         playback.playChapter(chapter.id)
-        viewModelScope.launch { repo.saveProgress(bookId, chapter.index, 0L) }
+        // Сохраняем место так же, как это делает плеер: идентификатор главы плюс её
+        // место в очереди. Номер главы в книге для этого не годится — очередь и книга
+        // совпадают далеко не всегда.
+        val position = state.value.chapters.indexOfFirst { it.chapter.id == chapter.id }
+        viewModelScope.launch {
+            repo.saveProgress(bookId, chapter.id, position.coerceAtLeast(0), 0L)
+        }
     }
 
     fun seekFraction(fraction: Float) = playback.seekFraction(fraction)

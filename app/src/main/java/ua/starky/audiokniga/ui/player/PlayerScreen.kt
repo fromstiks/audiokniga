@@ -821,15 +821,29 @@ private fun ChapterRow(
             fontWeight = FontWeight.ExtraBold,
             modifier = Modifier.size(width = 20.dp, height = 16.dp),
         )
-        Text(
-            text = item.chapter.title,
-            color = c.ink,
-            fontSize = 12.5.sp,
-            fontWeight = if (item.isCurrent) FontWeight.Bold else FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = item.chapter.title,
+                color = c.ink,
+                fontSize = 12.5.sp,
+                fontWeight = if (item.isCurrent) FontWeight.Bold else FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            // У книги с устройства название главы берётся из тега, а звучит файл.
+            // Когда теги врут, понять это можно только по имени файла — показываем его.
+            val file = fileNameOf(item.chapter.audioUrl)
+            if (local && file != null && file != item.chapter.title) {
+                Text(
+                    text = file,
+                    color = c.inkFaint,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
         Text(
             text = formatTime(item.chapter.durationMs),
             color = c.inkFaint,
@@ -891,6 +905,13 @@ private fun downloadedLabel(downloaded: Int, total: Int): String = when {
 
 private fun formatSpeed(speed: Float): String =
     if (speed == speed.toInt().toFloat()) "${speed.toInt()}×" else "${speed}×"
+
+/** Имя файла из адреса главы: для книги с устройства это самый надёжный ориентир. */
+private fun fileNameOf(audioUrl: String): String? {
+    val path = runCatching { android.net.Uri.parse(audioUrl).lastPathSegment }.getOrNull()
+        ?: audioUrl
+    return path.substringAfterLast('/').takeIf { it.isNotBlank() && it != audioUrl }
+}
 
 internal fun formatTime(ms: Long): String {
     if (ms <= 0) return "0:00"

@@ -65,9 +65,45 @@ object MediaScraper {
         }
 
         if (found.tracks.isEmpty()) {
-            throw ProviderException("по этому адресу не нашлось ни одного аудиофайла")
+            throw ProviderException(blockReason(response) ?: "по этому адресу не нашлось ни одного аудиофайла")
         }
         return found
+    }
+
+    /** Известные строки защиты от ботов: Cloudflare, PerimeterX, DataDome и их аналоги. */
+    private val BOT_CHALLENGE_MARKERS = listOf(
+        "just a moment", "checking your browser before accessing",
+        "cf-browser-verification", "cf_chl_opt", "attention required",
+        "verify you are human", "enable javascript and cookies to continue",
+        "perimeterx", "datadome", "распознан как робот",
+        "подтвердите, что вы не робот",
+    )
+
+    /**
+     * Иногда пустой результат объясняется не содержимым страницы, а тем, что до
+     * него не добрались вовсе. Защита от ботов подменяет ответ проверочной
+     * страницей, а многие современные сайты собирают содержимое в браузере через
+     * JavaScript — простой запрос получает пустой каркас без единой ссылки внутри.
+     * Оба случая выглядят как «аудио нет», но разбирать в них нечего: дело не в
+     * разборе, а в том, что настоящая страница до приложения не дошла.
+     */
+    internal fun blockReason(response: Http.Response): String? {
+        val head = response.body.take(6000).lowercase()
+        if (BOT_CHALLENGE_MARKERS.any { head.contains(it) }) {
+            return "сайт защищён от автоматических запросов (проверка на робота) — " +
+                "простым запросом до содержимого не добраться"
+        }
+
+        if (!response.contentType.contains("html") && !head.contains("<html")) return null
+        val doc = runCatching { Jsoup.parse(response.body, response.url) }.getOrNull() ?: return null
+        val visibleText = doc.body()?.text()?.trim().orEmpty()
+        val scripts = doc.select("script[src]").size
+        return if (visibleText.length < 80 && scripts >= 2) {
+            "страница собирается в браузере через JavaScript — простой запрос " +
+                "получает пустой каркас без содержимого"
+        } else {
+            null
+        }
     }
 
     // ——— RSS и Atom ———

@@ -56,7 +56,12 @@ object SourceProbe {
             return Report(true, "$what ${found.tracks.size} файлов · «${found.title.take(40)}»")
         }
 
-        // Ответ есть, аудио нет — дальше важно, что это за страница.
+        // Ответ есть, аудио нет — дальше важно, что это за страница. Прежде всего
+        // стоит проверить, не подменили ли настоящую страницу проверкой на робота
+        // или пустым каркасом для JavaScript: тогда разбирать было нечего с самого
+        // начала, и дело не в том, что на сайте нет аудио.
+        MediaScraper.blockReason(response)?.let { return Report(false, it.replaceFirstChar { c -> c.uppercase() }) }
+
         val body = response.body.take(2000).lowercase()
         val looksLikeHtml = body.contains("<html") || response.contentType.contains("html")
         return when {

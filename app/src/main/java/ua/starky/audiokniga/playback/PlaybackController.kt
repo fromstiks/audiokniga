@@ -23,7 +23,7 @@ import ua.starky.audiokniga.data.repo.LibraryRepository
 import ua.starky.audiokniga.download.DownloadTracker
 
 /** Что нажали в виджете на рабочем столе. */
-enum class WidgetAction { PLAY_PAUSE, REWIND, FORWARD }
+enum class WidgetAction { PLAY_PAUSE, REWIND, FORWARD, PREVIOUS_CHAPTER, NEXT_CHAPTER }
 
 /**
  * Единственное на приложение управление воспроизведением.
@@ -186,6 +186,11 @@ class PlaybackController(
 
     fun skipBack() = connection.skipBy(-skipMs)
 
+    /** Переход на соседнюю главу целиком — то, что просит виджет кнопками по краям. */
+    fun previousChapter() = connection.skipChapter(-1)
+
+    fun nextChapter() = connection.skipChapter(1)
+
     /**
      * Команда из виджета.
      *
@@ -212,6 +217,8 @@ class PlaybackController(
                         WidgetAction.PLAY_PAUSE -> if (hadQueue) connection.playPause()
                         WidgetAction.REWIND -> connection.skipBy(-skipMs)
                         WidgetAction.FORWARD -> connection.skipBy(skipMs)
+                        WidgetAction.PREVIOUS_CHAPTER -> connection.skipChapter(-1)
+                        WidgetAction.NEXT_CHAPTER -> connection.skipChapter(1)
                     }
                 }
             } finally {

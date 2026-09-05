@@ -61,10 +61,23 @@
         android:orientation="horizontal"
         android:gravity="center">
 
+        <!-- Переход на главу целиком — действие более редкое, чем перемотка на
+             несколько секунд, поэтому кнопки меньше и стоят по краям ряда. -->
+        <ImageButton
+            android:id="@+id/widget_previous_chapter"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:scaleType="fitCenter"
+            android:padding="9dp"
+            android:src="@drawable/ic_media_skip_previous"
+            android:contentDescription="@string/widget_previous_chapter" />
+
         <ImageButton
             android:id="@+id/widget_rewind"
             android:layout_width="44dp"
             android:layout_height="44dp"
+            android:layout_marginStart="6dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:scaleType="fitCenter"
             android:padding="11dp"
@@ -87,10 +100,21 @@
             android:id="@+id/widget_forward"
             android:layout_width="44dp"
             android:layout_height="44dp"
+            android:layout_marginEnd="6dp"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:scaleType="fitCenter"
             android:padding="11dp"
             android:src="@drawable/ic_media_forward"
             android:contentDescription="@string/widget_forward" />
+
+        <ImageButton
+            android:id="@+id/widget_next_chapter"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:scaleType="fitCenter"
+            android:padding="9dp"
+            android:src="@drawable/ic_media_skip_next"
+            android:contentDescription="@string/widget_next_chapter" />
     </LinearLayout>
 </LinearLayout>

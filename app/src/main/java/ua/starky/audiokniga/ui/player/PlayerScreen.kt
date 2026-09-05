@@ -164,20 +164,23 @@ fun PlayerScreen(
         }
 
         // ——— книга ———
-        Row(horizontalArrangement = Arrangement.spacedBy(15.dp)) {
-            Box(Modifier.size(104.dp).neuRaised(RoundedCornerShape(22.dp), elevation = 6.dp)) {
+        // Блок управления укрупнён в полтора раза — по кнопкам чаще всего и попадают
+        // пальцем, а не по строкам списка глав. Список ниже ужимается сам: он на
+        // weight(1f), а этот блок — нет, и просто занимает больше места, чем раньше.
+        Row(horizontalArrangement = Arrangement.spacedBy(22.dp)) {
+            Box(Modifier.size(156.dp).neuRaised(RoundedCornerShape(32.dp), elevation = 8.dp)) {
                 BookCover(
                     title = state.book?.title.orEmpty(),
                     coverUrl = state.book?.coverUrl,
-                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(22.dp)),
-                    fontSize = 9,
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(32.dp)),
+                    fontSize = 13,
                 )
             }
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = state.book?.title.orEmpty(),
                     color = c.ink,
-                    fontSize = 18.sp,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
@@ -185,13 +188,13 @@ fun PlayerScreen(
                 Text(
                     text = state.book?.author.orEmpty(),
                     color = c.inkMuted,
-                    fontSize = 12.5.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Medium,
                 )
                 Text(
                     text = state.book?.let { ProviderRegistry.displayName(it.providerId) }.orEmpty(),
                     color = c.inkFaint,
-                    fontSize = 10.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.1.sp,
                 )
@@ -199,52 +202,54 @@ fun PlayerScreen(
                     text = if (state.isLocal) "Играет с устройства, без сети"
                     else downloadedLabel(state.downloadedCount, state.chapters.size),
                     color = if (state.isLocal || state.downloadedCount > 0) c.offline else c.inkFaint,
-                    fontSize = 11.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 0.8.sp,
                 )
             }
         }
 
-        Spacer(Modifier.height(20.dp))
+        Spacer(Modifier.height(28.dp))
 
         val duration = state.playback.durationMs
         val position = state.playback.positionMs
         NeuSlider(
             progress = if (duration > 0) position.toFloat() / duration else 0f,
             onSeek = viewModel::seekFraction,
+            trackHeight = 9.dp,
+            knobSize = 26.dp,
         )
 
         Row(
-            Modifier.fillMaxWidth().padding(top = 9.dp),
+            Modifier.fillMaxWidth().padding(top = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            Text(formatTime(position), color = c.inkFaint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(formatTime(position), color = c.inkFaint, fontSize = 14.sp, fontWeight = FontWeight.Bold)
             Text(
                 text = if (duration > 0) "−${formatTime(duration - position)}" else "--:--",
                 color = c.inkFaint,
-                fontSize = 11.sp,
+                fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
             )
         }
 
         Row(
-            Modifier.fillMaxWidth().padding(top = 14.dp),
+            Modifier.fillMaxWidth().padding(top = 20.dp),
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SkipButton(seconds = state.skipSeconds, forward = false, onClick = viewModel::skipBack)
-            Spacer(Modifier.size(14.dp))
+            SkipButton(seconds = state.skipSeconds, forward = false, onClick = viewModel::skipBack, size = 63.dp)
+            Spacer(Modifier.size(21.dp))
             NeuIconButton(
                 icon = if (state.playback.isPlaying) AppIcons.Pause else AppIcons.Play,
                 contentDescription = if (state.playback.isPlaying) "Пауза" else "Слушать",
                 onClick = viewModel::playPause,
-                size = 62.dp,
-                iconSize = 24.dp,
+                size = 93.dp,
+                iconSize = 36.dp,
                 tint = c.accent,
             )
-            Spacer(Modifier.size(14.dp))
-            SkipButton(seconds = state.skipSeconds, forward = true, onClick = viewModel::skipForward)
+            Spacer(Modifier.size(21.dp))
+            SkipButton(seconds = state.skipSeconds, forward = true, onClick = viewModel::skipForward, size = 63.dp)
         }
 
         Spacer(Modifier.height(16.dp))

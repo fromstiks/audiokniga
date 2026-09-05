@@ -70,6 +70,8 @@ class PlayerWidget : AppWidgetProvider() {
         const val ACTION_PLAY_PAUSE = "ua.starky.audiokniga.widget.PLAY_PAUSE"
         const val ACTION_REWIND = "ua.starky.audiokniga.widget.REWIND"
         const val ACTION_FORWARD = "ua.starky.audiokniga.widget.FORWARD"
+        const val ACTION_PREVIOUS_CHAPTER = "ua.starky.audiokniga.widget.PREVIOUS_CHAPTER"
+        const val ACTION_NEXT_CHAPTER = "ua.starky.audiokniga.widget.NEXT_CHAPTER"
 
         private const val COVER_SIZE = 132
 
@@ -77,6 +79,8 @@ class PlayerWidget : AppWidgetProvider() {
             ACTION_PLAY_PAUSE to WidgetAction.PLAY_PAUSE,
             ACTION_REWIND to WidgetAction.REWIND,
             ACTION_FORWARD to WidgetAction.FORWARD,
+            ACTION_PREVIOUS_CHAPTER to WidgetAction.PREVIOUS_CHAPTER,
+            ACTION_NEXT_CHAPTER to WidgetAction.NEXT_CHAPTER,
         )
 
         /**
@@ -145,9 +149,11 @@ class PlayerWidget : AppWidgetProvider() {
             )
             views.setImageViewBitmap(R.id.widget_cover, cover ?: coverTile(context, state.title))
 
+            views.setOnClickPendingIntent(R.id.widget_previous_chapter, command(context, ACTION_PREVIOUS_CHAPTER))
             views.setOnClickPendingIntent(R.id.widget_rewind, command(context, ACTION_REWIND))
             views.setOnClickPendingIntent(R.id.widget_play, command(context, ACTION_PLAY_PAUSE))
             views.setOnClickPendingIntent(R.id.widget_forward, command(context, ACTION_FORWARD))
+            views.setOnClickPendingIntent(R.id.widget_next_chapter, command(context, ACTION_NEXT_CHAPTER))
             // Нажатие на обложку и подписи открывает приложение — ожидаемый жест.
             views.setOnClickPendingIntent(R.id.widget_cover, openApp(context))
             views.setOnClickPendingIntent(R.id.widget_title, openApp(context))

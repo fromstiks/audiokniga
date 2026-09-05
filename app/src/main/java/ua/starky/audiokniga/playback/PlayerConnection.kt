@@ -197,6 +197,21 @@ class PlayerConnection(
     }
 
     /**
+     * Соседняя глава по очереди — на [delta] позиций от текущей, за края очереди
+     * не выходит. Идёт прямым переходом по индексу, а не «следующий/предыдущий
+     * трек»: эти команды у плеера скрыты нарочно (PlaybackService.hideTrackSkip),
+     * чтобы не плодить лишние кнопки на экране блокировки.
+     */
+    fun skipChapter(delta: Int) {
+        val player = controller ?: return
+        if (player.mediaItemCount == 0) return
+        val target = (player.currentMediaItemIndex + delta)
+            .coerceIn(0, player.mediaItemCount - 1)
+        if (target == player.currentMediaItemIndex) return
+        playChapter(target)
+    }
+
+    /**
      * Глава ищется по идентификатору: её место в очереди зависит от режима источника.
      * Возвращает false, если такой главы в очереди нет — например в офлайне она
      * не скачана, и об этом надо сказать, а не молчать.

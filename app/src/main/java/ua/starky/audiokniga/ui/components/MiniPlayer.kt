@@ -76,29 +76,31 @@ fun MiniPlayer(
         (playback.positionMs.toFloat() / playback.durationMs).coerceIn(0f, 1f)
     } else 0f
 
+    // Нижняя часть с плеером укрупнена вдвое — по ней чаще всего попадают на ходу,
+    // не глядя внимательно, поэтому именно тут точность нажатия важнее всего.
     Column(
         modifier = modifier
             .fillMaxWidth()
             .neuRaised(shape, elevation = 8.dp)
             .clickable(onClick = onExpand)
-            .padding(horizontal = 14.dp, vertical = 13.dp),
-        verticalArrangement = Arrangement.spacedBy(11.dp),
+            .padding(horizontal = 28.dp, vertical = 26.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
         ) {
             BookCover(
                 title = book.title,
                 coverUrl = book.coverUrl,
-                modifier = Modifier.size(46.dp).clip(RoundedCornerShape(13.dp)),
-                fontSize = 6,
+                modifier = Modifier.size(92.dp).clip(RoundedCornerShape(26.dp)),
+                fontSize = 12,
             )
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
                     text = playback.chapterTitle?.takeIf { it.isNotBlank() } ?: book.title,
                     color = c.ink,
-                    fontSize = 13.5.sp,
+                    fontSize = 27.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -106,7 +108,7 @@ fun MiniPlayer(
                 Text(
                     text = book.title.takeIf { playback.chapterTitle != null } ?: book.author,
                     color = c.inkFaint,
-                    fontSize = 11.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.Medium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -117,7 +119,7 @@ fun MiniPlayer(
                     formatClock(playback.positionMs) + " / " + formatClock(playback.durationMs)
                 } else "--:--",
                 color = c.inkFaint,
-                fontSize = 10.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
             )
         }
@@ -127,8 +129,8 @@ fun MiniPlayer(
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(4.dp)
-                .neuSunken(RoundedCornerShape(percent = 50), depth = 1.5.dp)
+                .height(8.dp)
+                .neuSunken(RoundedCornerShape(percent = 50), depth = 3.dp)
         ) {
             Box(
                 Modifier
@@ -141,19 +143,19 @@ fun MiniPlayer(
 
         Row(
             Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
+            horizontalArrangement = Arrangement.spacedBy(20.dp, Alignment.CenterHorizontally),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            SkipButton(seconds = skipSeconds, forward = false, onClick = onSkipBack)
+            SkipButton(seconds = skipSeconds, forward = false, onClick = onSkipBack, size = 84.dp)
             NeuIconButton(
                 icon = if (playback.isPlaying) AppIcons.Pause else AppIcons.Play,
                 contentDescription = if (playback.isPlaying) "Пауза" else "Слушать",
                 onClick = onPlayPause,
-                size = 48.dp,
-                iconSize = 19.dp,
+                size = 96.dp,
+                iconSize = 38.dp,
                 tint = c.accent,
             )
-            SkipButton(seconds = skipSeconds, forward = true, onClick = onSkipForward)
+            SkipButton(seconds = skipSeconds, forward = true, onClick = onSkipForward, size = 84.dp)
         }
     }
 }
@@ -184,7 +186,9 @@ fun SkipButton(
             Text(
                 text = seconds.toString(),
                 color = c.inkFaint,
-                fontSize = 8.sp,
+                // Подпись растёт вместе с самой кнопкой — иначе на крупной кнопке
+                // остаётся мелкая цифра, будто она с другой кнопки поменьше.
+                fontSize = (size.value * 0.19f).sp,
                 fontWeight = FontWeight.ExtraBold,
             )
         }

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Аудиокнига</string>
+    <string name="app_name">АудиоХантер</string>
     <string name="download_channel_name">Загрузка книг</string>
     <string name="playback_channel_name">Воспроизведение</string>
 </resources>

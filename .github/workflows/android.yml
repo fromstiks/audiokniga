@@ -27,7 +27,7 @@ jobs:
       - name: Опубликовать APK как артефакт сборки
         uses: actions/upload-artifact@v4
         with:
-          name: audiokniga-debug-apk
+          name: audiohunter-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
@@ -53,7 +53,7 @@ jobs:
           HTTP_CODE=$(curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendDocument" \
             -F chat_id="${TG_CHAT}" \
             -F document=@"${APK}" \
-            -F caption="Аудиокнига · сборка ${GITHUB_SHA:0:7} · ветка ${GITHUB_REF_NAME} · ${SIZE}" \
+            -F caption="АудиоХантер · сборка ${GITHUB_SHA:0:7} · ветка ${GITHUB_REF_NAME} · ${SIZE}" \
             -o response.json -w "%{http_code}")
           echo "HTTP статус: $HTTP_CODE"
           echo "Ответ Telegram:"

@@ -1,4 +1,4 @@
--keep class ua.starky.audiokniga.data.model.** { *; }
+-keep class ua.starky.audiohunter.data.model.** { *; }
 -keepclassmembers class kotlinx.serialization.json.** { *; }
 -keepattributes *Annotation*, InnerClasses
 -dontwarn okhttp3.**

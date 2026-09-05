@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "ua.starky.audiokniga"
+    namespace = "ua.starky.audiohunter"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "ua.starky.audiokniga"
+        applicationId = "ua.starky.audiohunter"
         minSdk = 24
         targetSdk = 35
         versionCode = 1

@@ -1,7 +1,11 @@
-# Аудиокнига
+# АудиоХантер
 
 Android-плеер аудиокниг с неоморфным интерфейсом, поддержкой светлой и тёмной темы
 и явным выбором источника воспроизведения: из сети или с устройства.
+
+Идентификатор приложения — `ua.starky.audiohunter`, отдельный от старого
+`ua.starky.audiokniga`. Это самостоятельное приложение: ставится рядом со старой
+«Аудиокнигой», а не поверх неё, и не задевает её данные.
 
 ## Как это выглядит
 
@@ -88,12 +92,12 @@ APK окажется в `app/build/outputs/apk/debug/`.
 
 Каждый push в `main` собирает debug-APK на GitHub Actions. Скачать:
 вкладка **Actions** → последний запуск **Android build** → раздел **Artifacts** →
-`audiokniga-debug-apk`.
+`audiohunter-debug-apk`.
 
 ## Структура
 
 ```
-app/src/main/java/ua/starky/audiokniga/
+app/src/main/java/ua/starky/audiohunter/
 ├── data/
 │   ├── model/        модели: Book, Chapter, SourceMode, DownloadState
 │   ├── db/           Room: сущности, DAO, база

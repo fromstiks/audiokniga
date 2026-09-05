@@ -1,0 +1,62 @@
+# Скопируйте в sites.yaml и подставьте свой сайт. Подключайте сюда ТОЛЬКО источники,
+# на скрейпинг которых у вас есть право: свой сервис, партнёрский доступ, открытый API.
+#
+# selector-строки — это CSS-селектор, опционально с "@атрибут" в конце:
+#   "h3.title"        -> текст узла
+#   "img.cover@src"   -> значение атрибута src
+#
+# engine: static  — обычный HTML, разбирается requests+BeautifulSoup (быстро, дёшево)
+# engine: dynamic — страница дорисовывается JS, нужен headless-браузер (Playwright)
+
+sites:
+  - key: mycorp
+    name: "Мой корпоративный сервис"
+    enabled: true
+    engine: static
+    base_url: "https://audiobooks.example-corp.internal"
+    search_url: "https://audiobooks.example-corp.internal/search?query={query}"
+    request_headers:
+      # Если поиск требует авторизации — положите сюда токен/куку своей сессии.
+      Cookie: "session=REPLACE_ME"
+    rate_limit_sec: 1.0
+    timeout_sec: 20
+    selectors:
+      result_item: "div.book-card"
+      title: "h3.book-card__title"
+      author: ".book-card__author"
+      cover: "img.book-card__cover@src"
+      link: "a.book-card__link@href"
+      duration: ".book-card__duration"
+    detail_selectors:
+      title: "h1.book__title"
+      author: ".book__author"
+      cover: "img.book__cover@src"
+      description: ".book__description"
+      chapter_item: "ul.book__chapters li"
+      chapter_title: ".chapter__title"
+      chapter_audio: "a.chapter__download@href"
+      chapter_duration: ".chapter__duration"
+
+  # Пример источника с JS-рендерингом (список глав подгружается скриптом).
+  - key: mycorp_spa
+    name: "Мой сервис (SPA-версия)"
+    enabled: false
+    engine: dynamic
+    base_url: "https://app.example-corp.internal"
+    search_url: "https://app.example-corp.internal/search?q={query}"
+    rate_limit_sec: 2.0
+    timeout_sec: 30
+    selectors:
+      result_item: "[data-testid=book-card]"
+      title: "[data-testid=book-title]"
+      author: "[data-testid=book-author]"
+      cover: "img@src"
+      link: "a@href"
+    detail_selectors:
+      title: "h1"
+      author: "[data-testid=author]"
+      description: "[data-testid=description]"
+      chapter_item: "[data-testid=chapter-row]"
+      chapter_title: "[data-testid=chapter-title]"
+      chapter_audio: "audio source@src"
+      chapter_duration: "[data-testid=chapter-duration]"

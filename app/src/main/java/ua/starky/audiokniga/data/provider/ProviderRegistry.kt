@@ -9,6 +9,7 @@ object ProviderRegistry {
         LibriVoxProvider(),
         ArchiveOrgProvider(),
         RssProvider(),
+        AggregatorApiProvider(),
     )
 
     /** Источники, по которым имеет смысл искать по слову. RSS ждёт ссылку, поэтому он отдельно. */

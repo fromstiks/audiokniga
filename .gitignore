@@ -11,3 +11,10 @@
 local.properties
 *.apk
 *.aab
+
+# server/ (Python-агрегатор)
+server/.venv/
+server/__pycache__/
+server/**/__pycache__/
+server/sites.yaml
+server/.pytest_cache/

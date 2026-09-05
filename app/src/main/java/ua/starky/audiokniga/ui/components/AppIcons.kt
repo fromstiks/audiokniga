@@ -123,6 +123,19 @@ object AppIcons {
         horizontalLineTo(16f); arcToRelative(2f, 2f, 0f, false, false, 2f, -2f); verticalLineTo(7f)
     }
 
+    /** Настройки: шестерёнка. */
+    val Settings: ImageVector = stroked("Settings") {
+        moveTo(12f, 9f); arcToRelative(3f, 3f, 0f, true, true, -0.01f, 0f); close()
+        moveTo(12f, 2.5f); verticalLineToRelative(2.4f)
+        moveTo(12f, 19.1f); verticalLineToRelative(2.4f)
+        moveTo(21.5f, 12f); horizontalLineToRelative(-2.4f)
+        moveTo(4.9f, 12f); horizontalLineToRelative(-2.4f)
+        moveTo(18.4f, 5.6f); lineToRelative(-1.7f, 1.7f)
+        moveTo(7.3f, 16.7f); lineToRelative(-1.7f, 1.7f)
+        moveTo(18.4f, 18.4f); lineToRelative(-1.7f, -1.7f)
+        moveTo(7.3f, 7.3f); lineToRelative(-1.7f, -1.7f)
+    }
+
     val Refresh: ImageVector = stroked("Refresh") {
         moveTo(20f, 12f); arcToRelative(8f, 8f, 0f, true, true, -2.4f, -5.7f)
         moveTo(20f, 4f); verticalLineTo(9f); horizontalLineTo(15f)

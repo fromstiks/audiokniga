@@ -17,13 +17,20 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -35,6 +42,7 @@ import ua.starky.audiokniga.ui.components.CoverPlaceholder
 import ua.starky.audiokniga.ui.components.NeuIconButton
 import ua.starky.audiokniga.ui.theme.Neu
 import ua.starky.audiokniga.ui.theme.neuRaised
+import ua.starky.audiokniga.ui.theme.neuSunken
 
 @Composable
 fun LibraryScreen(
@@ -45,7 +53,17 @@ fun LibraryScreen(
     onOpenBook: (String) -> Unit,
 ) {
     val books by viewModel.books.collectAsStateWithLifecycle()
+    val aggregatorBaseUrl by viewModel.aggregatorBaseUrl.collectAsStateWithLifecycle()
+    var showSettings by remember { mutableStateOf(false) }
     val c = Neu.colors
+
+    if (showSettings) {
+        AggregatorSettingsDialog(
+            currentUrl = aggregatorBaseUrl,
+            onDismiss = { showSettings = false },
+            onSave = { url -> viewModel.setAggregatorBaseUrl(url); showSettings = false },
+        )
+    }
 
     Column(
         Modifier
@@ -81,6 +99,8 @@ fun LibraryScreen(
                 size = 40.dp,
                 iconSize = 16.dp,
             )
+            Spacer(Modifier.size(10.dp))
+            NeuIconButton(AppIcons.Settings, "Настройки сервера", { showSettings = true }, size = 40.dp, iconSize = 16.dp)
             Spacer(Modifier.size(10.dp))
             NeuIconButton(AppIcons.Search, "Найти книгу", onOpenSearch, size = 40.dp, iconSize = 16.dp, tint = c.accent)
         }
@@ -148,6 +168,63 @@ fun LibraryScreen(
             }
         }
     }
+}
+
+@Composable
+private fun AggregatorSettingsDialog(
+    currentUrl: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    val c = Neu.colors
+    var text by remember { mutableStateOf(currentUrl) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Свой сервер-агрегатор", color = c.ink, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column {
+                Text(
+                    "Адрес сервера из server/ (см. README). Пусто — источник «Мой сервер» выключен.",
+                    color = c.inkMuted,
+                    fontSize = 12.5.sp,
+                    lineHeight = 18.sp,
+                )
+                Spacer(Modifier.height(12.dp))
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .neuSunken(RoundedCornerShape(14.dp), depth = 2.dp)
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
+                ) {
+                    BasicTextField(
+                        value = text,
+                        onValueChange = { text = it },
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(color = c.ink, fontSize = 14.sp),
+                        cursorBrush = SolidColor(c.accent),
+                        decorationBox = { inner ->
+                            if (text.isEmpty()) {
+                                Text("http://192.168.1.10:8000", color = c.inkFaint, fontSize = 13.sp)
+                            }
+                            inner()
+                        },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Text(
+                "Сохранить",
+                color = c.accent,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable { onSave(text) }.padding(8.dp),
+            )
+        },
+        dismissButton = {
+            Text("Отмена", color = c.inkMuted, modifier = Modifier.clickable(onClick = onDismiss).padding(8.dp))
+        },
+    )
 }
 
 private fun plural(count: Int): String {

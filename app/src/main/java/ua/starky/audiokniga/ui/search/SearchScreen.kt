@@ -112,7 +112,8 @@ fun SearchScreen(
             state.results.isEmpty() && state.searched -> Hint("Ничего не нашлось. Попробуйте другое написание или имя автора.")
             state.results.isEmpty() -> Hint(
                 "Ищем по LibriVox и Internet Archive — это книги в общественном достоянии. " +
-                    "Ссылку на RSS-ленту можно вставить прямо в поле поиска."
+                    "Ссылку на RSS-ленту можно вставить прямо в поле поиска. Если в настройках " +
+                    "указан адрес своего сервера-агрегатора, ищем и там."
             )
             else -> LazyColumn(
                 Modifier.weight(1f).navigationBarsPadding(),

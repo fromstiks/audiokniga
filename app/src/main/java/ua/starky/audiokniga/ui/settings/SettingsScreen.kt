@@ -89,6 +89,19 @@ fun SettingsScreen(
                 onRescan = viewModel::rescanLibraryFolder,
                 onForget = viewModel::forgetLibraryFolder,
             )
+            // Результат скана — сразу под карточкой папки, а не в общей ленте сообщений
+            // внизу экрана: до неё ещё надо долистать, а тут явно видно, что нашлось.
+            message?.let { text ->
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .neuSunken(RoundedCornerShape(16.dp), depth = 3.dp)
+                        .clickable { viewModel.clearMessage() }
+                        .padding(horizontal = 14.dp, vertical = 11.dp)
+                ) {
+                    Text(text, color = c.inkMuted, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+            }
 
             Spacer(Modifier.height(4.dp))
             SectionLabel("Воспроизведение")
@@ -114,18 +127,6 @@ fun SettingsScreen(
                 fontSize = 12.sp,
                 lineHeight = 18.sp,
             )
-
-            message?.let { text ->
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .neuSunken(RoundedCornerShape(16.dp), depth = 3.dp)
-                        .clickable { viewModel.clearMessage() }
-                        .padding(horizontal = 14.dp, vertical = 11.dp)
-                ) {
-                    Text(text, color = c.inkMuted, fontSize = 12.sp, lineHeight = 17.sp)
-                }
-            }
 
             Spacer(Modifier.height(20.dp))
         }

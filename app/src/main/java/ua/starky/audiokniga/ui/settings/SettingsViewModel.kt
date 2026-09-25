@@ -74,10 +74,17 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             .onSuccess { books ->
                 books.forEach { repo.importLocal(it) }
                 _scanning.value = false
+                // Голое число ничего не объясняет, когда книг нашлось меньше, чем ожидалось:
+                // человек не может понять, какую папку приложение не заметило и почему.
+                // Список названий — самая короткая подсказка, где искать расхождение.
                 _message.value = if (books.isEmpty()) {
-                    "В папке не нашлось аудиофайлов. Проверьте, что книги лежат внутри неё."
+                    "Ни одной книги не нашлось. Приложение ищет вложенные папки с аудио " +
+                        "(mp3, m4a, m4b, ogg, opus, aac, wav, flac) — не глубже трёх уровней " +
+                        "и не сами файлы прямо в выбранной папке. Если книга не появилась, " +
+                        "загляните в её папку и проверьте расширения файлов."
                 } else {
-                    "Добавлено ${books.size} ${bookWord(books.size)}"
+                    "Нашлось ${books.size} ${bookWord(books.size)}: " +
+                        books.joinToString(", ") { "«${it.book.title}»" }
                 }
             }
             .onFailure {

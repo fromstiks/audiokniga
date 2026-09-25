@@ -81,20 +81,52 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _importing = MutableStateFlow(false)
     val importing: StateFlow<Boolean> = _importing.asStateFlow()
 
-    /** Папка целиком — одна книга. Самый частый способ хранить аудиокнигу. */
-    fun importFolder(uri: Uri) = importWith { LocalImporter.fromFolder(getApplication<Application>(), uri) }
-
-    /** Отдельные файлы — когда книга разложена не по папкам. */
-    fun importFiles(uris: List<Uri>) = importWith { LocalImporter.fromFiles(getApplication<Application>(), uris) }
-
-    private fun importWith(load: suspend () -> ua.starky.audiokniga.data.model.BookDetails?) {
+    /**
+     * Выбранная папка может быть как одной книгой (аудио прямо внутри), так и целой
+     * библиотекой с книгой в каждой подпапке — так чаще всего и устроены домашние
+     * коллекции. [LocalImporter.scanLibrary] понимает оба случая сама: если аудио
+     * лежит прямо в выбранной папке, это и есть одна книга; если нет — ищет книги
+     * во вложенных папках.
+     */
+    fun importFolder(uri: Uri) {
         viewModelScope.launch {
             _importing.value = true
-            runCatching { load() }
+            runCatching { LocalImporter.scanLibrary(getApplication<Application>(), uri) }
+                .onSuccess { books ->
+                    _importing.value = false
+                    if (books.isEmpty()) {
+                        _message.value = "Аудиофайлов не нашлось ни в папке, ни во вложенных " +
+                            "(глубже трёх уровней приложение не ищет). Поддерживаются mp3, " +
+                            "m4a, m4b, ogg, oga, opus, aac, wav, flac."
+                        return@onSuccess
+                    }
+                    books.forEach { repo.importLocal(it) }
+                    _message.value = if (books.size == 1) {
+                        val details = books.first()
+                        "Добавлено: «${details.book.title}», " +
+                            "${details.chapters.size} ${chapterWord(details.chapters.size)}"
+                    } else {
+                        "Добавлено ${books.size} ${bookWord(books.size)}: " +
+                            books.joinToString(", ") { "«${it.book.title}»" }
+                    }
+                }
+                .onFailure {
+                    _importing.value = false
+                    _message.value = "Не удалось прочитать: ${it.message ?: "неизвестная ошибка"}"
+                }
+        }
+    }
+
+    /** Отдельные файлы — когда книга разложена не по папкам. */
+    fun importFiles(uris: List<Uri>) {
+        viewModelScope.launch {
+            _importing.value = true
+            runCatching { LocalImporter.fromFiles(getApplication<Application>(), uris) }
                 .onSuccess { details ->
                     _importing.value = false
                     if (details == null) {
-                        _message.value = "Аудиофайлов не нашлось. Поддерживаются mp3, m4a, m4b, ogg, opus, flac и wav."
+                        _message.value = "Аудиофайлов не нашлось. Поддерживаются mp3, m4a, m4b, " +
+                            "ogg, oga, opus, aac, wav, flac."
                         return@onSuccess
                     }
                     repo.importLocal(details)
@@ -168,5 +200,16 @@ private fun chapterWord(count: Int): String {
         mod10 == 1 -> "глава"
         mod10 in 2..4 -> "главы"
         else -> "глав"
+    }
+}
+
+private fun bookWord(count: Int): String {
+    val mod100 = count % 100
+    val mod10 = count % 10
+    return when {
+        mod100 in 11..14 -> "книг"
+        mod10 == 1 -> "книга"
+        mod10 in 2..4 -> "книги"
+        else -> "книг"
     }
 }

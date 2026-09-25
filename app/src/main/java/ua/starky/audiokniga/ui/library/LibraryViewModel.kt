@@ -87,34 +87,52 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
      * коллекции. [LocalImporter.scanLibrary] понимает оба случая сама: если аудио
      * лежит прямо в выбранной папке, это и есть одна книга; если нет — ищет книги
      * во вложенных папках.
+     *
+     * Папка запоминается как папка библиотеки — потом её можно пересканировать
+     * свайпом по полке, не выбирая заново через системный проводник.
      */
     fun importFolder(uri: Uri) {
         viewModelScope.launch {
-            _importing.value = true
-            runCatching { LocalImporter.scanLibrary(getApplication<Application>(), uri) }
-                .onSuccess { books ->
-                    _importing.value = false
-                    if (books.isEmpty()) {
-                        _message.value = "Аудиофайлов не нашлось ни в папке, ни во вложенных " +
-                            "(глубже трёх уровней приложение не ищет). Поддерживаются mp3, " +
-                            "m4a, m4b, ogg, oga, opus, aac, wav, flac."
-                        return@onSuccess
-                    }
-                    books.forEach { repo.importLocal(it) }
-                    _message.value = if (books.size == 1) {
-                        val details = books.first()
-                        "Добавлено: «${details.book.title}», " +
-                            "${details.chapters.size} ${chapterWord(details.chapters.size)}"
-                    } else {
-                        "Добавлено ${books.size} ${bookWord(books.size)}: " +
-                            books.joinToString(", ") { "«${it.book.title}»" }
-                    }
-                }
-                .onFailure {
-                    _importing.value = false
-                    _message.value = "Не удалось прочитать: ${it.message ?: "неизвестная ошибка"}"
-                }
+            getApplication<Application>().app.settings.setLibraryFolder(uri.toString())
+            scanAndImport(uri)
         }
+    }
+
+    /** Пересканировать уже выбранную папку библиотеки — по свайпу вниз на полке. */
+    fun refreshLibraryFolder() {
+        val saved = libraryFolder.value
+        if (saved == null) {
+            _message.value = "Сначала добавьте папку с книгами кнопкой «Папка»"
+            return
+        }
+        viewModelScope.launch { scanAndImport(saved) }
+    }
+
+    private suspend fun scanAndImport(uri: Uri) {
+        _importing.value = true
+        runCatching { LocalImporter.scanLibrary(getApplication<Application>(), uri) }
+            .onSuccess { books ->
+                _importing.value = false
+                if (books.isEmpty()) {
+                    _message.value = "Аудиофайлов не нашлось ни в папке, ни во вложенных " +
+                        "(глубже трёх уровней приложение не ищет). Поддерживаются mp3, " +
+                        "m4a, m4b, ogg, oga, opus, aac, wav, flac."
+                    return@onSuccess
+                }
+                books.forEach { repo.importLocal(it) }
+                _message.value = if (books.size == 1) {
+                    val details = books.first()
+                    "Добавлено: «${details.book.title}», " +
+                        "${details.chapters.size} ${chapterWord(details.chapters.size)}"
+                } else {
+                    "Добавлено ${books.size} ${bookWord(books.size)}: " +
+                        books.joinToString(", ") { "«${it.book.title}»" }
+                }
+            }
+            .onFailure {
+                _importing.value = false
+                _message.value = "Не удалось прочитать: ${it.message ?: "неизвестная ошибка"}"
+            }
     }
 
     /** Отдельные файлы — когда книга разложена не по папкам. */

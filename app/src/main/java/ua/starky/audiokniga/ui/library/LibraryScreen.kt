@@ -24,9 +24,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -55,6 +57,7 @@ import ua.starky.audiokniga.ui.theme.Neu
 import ua.starky.audiokniga.ui.theme.neuRaised
 import ua.starky.audiokniga.ui.theme.neuSunken
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibraryScreen(
     viewModel: LibraryViewModel,
@@ -151,24 +154,31 @@ fun LibraryScreen(
 
                 books.isEmpty() -> EmptyFilter(filter = filter, onShowAll = { viewModel.setFilter(ShelfFilter.All) })
 
-                else -> LazyColumn(
-                    Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(11.dp),
-                    contentPadding = PaddingValues(bottom = 12.dp),
+                // Свайп вниз пересканирует папку библиотеки — быстрее, чем идти в настройки.
+                else -> PullToRefreshBox(
+                    isRefreshing = importing,
+                    onRefresh = viewModel::refreshLibraryFolder,
+                    modifier = Modifier.fillMaxSize(),
                 ) {
-                    items(books, key = { it.id }) { book ->
-                        BookRow(
-                            book = book,
-                            source = ProviderRegistry.displayName(book.providerId),
-                            playing = playback.isPlaying && playback.bookId == book.id,
-                            inPlaylist = filter is ShelfFilter.InPlaylist,
-                            onOpen = { onOpenBook(book.id) },
-                            onToggleFavorite = { viewModel.toggleFavorite(book) },
-                            onRemove = {
-                                if (filter is ShelfFilter.InPlaylist) viewModel.removeFromCurrentPlaylist(book)
-                                else viewModel.remove(book.id)
-                            },
-                        )
+                    LazyColumn(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(11.dp),
+                        contentPadding = PaddingValues(bottom = 12.dp),
+                    ) {
+                        items(books, key = { it.id }) { book ->
+                            BookRow(
+                                book = book,
+                                source = ProviderRegistry.displayName(book.providerId),
+                                playing = playback.isPlaying && playback.bookId == book.id,
+                                inPlaylist = filter is ShelfFilter.InPlaylist,
+                                onOpen = { onOpenBook(book.id) },
+                                onToggleFavorite = { viewModel.toggleFavorite(book) },
+                                onRemove = {
+                                    if (filter is ShelfFilter.InPlaylist) viewModel.removeFromCurrentPlaylist(book)
+                                    else viewModel.remove(book.id)
+                                },
+                            )
+                        }
                     }
                 }
             }

@@ -118,7 +118,11 @@ fun AppNavigation() {
                         PlayerViewModel(application, bookId) as T
                 },
             )
-            PlayerScreen(viewModel = vm, onBack = { navController.popBackStack() })
+            PlayerScreen(
+                viewModel = vm,
+                onBack = { navController.popBackStack() },
+                onOpenBook = { id -> navController.navigate(Routes.player(id)) },
+            )
         }
     }
 }

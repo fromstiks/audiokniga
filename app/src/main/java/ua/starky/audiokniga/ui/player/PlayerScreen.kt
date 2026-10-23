@@ -16,7 +16,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -46,8 +48,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.starky.audiokniga.data.model.Bookmark
+import ua.starky.audiokniga.data.model.BookSeries
 import ua.starky.audiokniga.data.model.ChapterUi
 import ua.starky.audiokniga.data.model.DownloadState
+import ua.starky.audiokniga.data.model.SeriesEntry
 import ua.starky.audiokniga.data.model.SourceMode
 import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.playback.SleepPlan
@@ -76,11 +80,13 @@ import java.util.Locale
 fun PlayerScreen(
     viewModel: PlayerViewModel,
     onBack: () -> Unit,
+    onOpenBook: (String) -> Unit,
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val picker by viewModel.playlistPicker.collectAsStateWithLifecycle()
     val sleep by viewModel.sleep.collectAsStateWithLifecycle()
     val marks by viewModel.bookmarks.collectAsStateWithLifecycle()
+    val series by viewModel.series.collectAsStateWithLifecycle()
     val c = Neu.colors
     var pickerOpen by remember { mutableStateOf(false) }
     var sleepOpen by remember { mutableStateOf(false) }
@@ -207,6 +213,11 @@ fun PlayerScreen(
                     letterSpacing = 0.8.sp,
                 )
             }
+        }
+
+        series?.let { bookSeries ->
+            Spacer(Modifier.height(16.dp))
+            SeriesBlock(series = bookSeries, currentBookId = state.book?.id, onOpen = onOpenBook)
         }
 
         Spacer(Modifier.height(28.dp))
@@ -412,6 +423,62 @@ private fun ToolChip(
             color = if (accent) c.ink else c.inkMuted,
             fontSize = 11.5.sp,
             fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/**
+ * Цикл книги: название и горизонтальная полоса пронумерованных частей. Нажатие на
+ * чужую часть открывает её тем же экраном — источник добавит её в библиотеку сам,
+ * как при любом другом открытии книги по id.
+ */
+@Composable
+private fun SeriesBlock(series: BookSeries, currentBookId: String?, onOpen: (String) -> Unit) {
+    val c = Neu.colors
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            "Цикл «${series.name}»",
+            color = c.inkMuted,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(series.items, key = { it.bookId ?: it.index }) { entry ->
+                SeriesChip(
+                    entry = entry,
+                    // Часть без ссылки — всегда текущая книга (так её помечает сам сайт);
+                    // по id проверяем на случай, если источник когда-нибудь сошлётся и на себя.
+                    current = entry.bookId == null || entry.bookId == currentBookId,
+                    onClick = { entry.bookId?.let(onOpen) },
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SeriesChip(entry: SeriesEntry, current: Boolean, onClick: () -> Unit) {
+    val c = Neu.colors
+    Row(
+        Modifier
+            .widthIn(max = 160.dp)
+            .then(
+                if (current) Modifier.neuSunken(RoundedCornerShape(14.dp), depth = 3.dp)
+                else Modifier.neuRaised(RoundedCornerShape(14.dp), elevation = 3.dp)
+            )
+            .clickable(enabled = !current, onClick = onClick)
+            .padding(horizontal = 11.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+        Text(entry.index, color = c.inkFaint, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(
+            entry.title,
+            color = if (current) c.ink else c.inkMuted,
+            fontSize = 11.5.sp,
+            fontWeight = if (current) FontWeight.Bold else FontWeight.Medium,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

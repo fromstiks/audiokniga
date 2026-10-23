@@ -32,6 +32,22 @@ data class Book(
     val favorite: Boolean = false,
 )
 
+/**
+ * Часть цикла. [bookId] — готовый к открытию id у того же провайдера; null у текущей
+ * книги (источник её сам не ссылает на себя) и у частей, чей адрес не разобрать.
+ */
+data class SeriesEntry(
+    val index: String,
+    val title: String,
+    val bookId: String?,
+)
+
+/** Цикл, в который входит книга, — если источник вообще такое различает. */
+data class BookSeries(
+    val name: String,
+    val items: List<SeriesEntry>,
+)
+
 /** Глава = один аудиофайл. */
 data class Chapter(
     val id: String,

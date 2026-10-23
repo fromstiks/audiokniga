@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import ua.starky.audiokniga.app
 import ua.starky.audiokniga.data.model.Book
+import ua.starky.audiokniga.data.model.BookSeries
 import ua.starky.audiokniga.data.model.Bookmark
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.ChapterOrder
@@ -134,11 +135,21 @@ class PlayerViewModel(application: Application, private val bookId: String) : An
     val bookmarks: StateFlow<List<Bookmark>> = repo.observeBookmarks(bookId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * Цикл — отдельным потоком, а не в [PlayerUiState]: источник отдаёт его не сразу
+     * и не всегда, экран не должен ради этого ждать или мигать остальным содержимым.
+     */
+    private val seriesState = MutableStateFlow<BookSeries?>(null)
+    val series: StateFlow<BookSeries?> = seriesState
+
     init {
         viewModelScope.launch {
             downloads.observe().collect { downloadInfo.value = it }
         }
         load()
+        viewModelScope.launch {
+            seriesState.value = runCatching { repo.series(bookId) }.getOrNull()
+        }
     }
 
     fun setSleepTimer(plan: SleepPlan) = playback.setSleepTimer(plan)

@@ -11,8 +11,10 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import ua.starky.audiokniga.data.model.Book
 import ua.starky.audiokniga.data.model.BookDetails
+import ua.starky.audiokniga.data.model.BookSeries
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.SearchResult
+import ua.starky.audiokniga.data.model.SeriesEntry
 import java.net.URI
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
@@ -182,6 +184,23 @@ class KnigavuheProvider : AudiobookProvider {
                 durationMs = track.durationSec?.times(1000L)?.takeIf { it > 0L } ?: chapter.durationMs,
             )
         }
+    }
+
+    /**
+     * Цикл, в который входит книга. На странице он не всегда есть: показываем, только
+     * если сайт сам его различает (`.book_serie_block`), а не угадываем по названию —
+     * слово в заголовке ничего не доказывает, а неверная ссылка хуже, чем её отсутствие.
+     */
+    override suspend fun series(bookId: String): BookSeries? {
+        val url = pageUrl(localIdOf(bookId))
+        val html = try {
+            Http.getString(url, userAgent = DESKTOP_UA)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            return null
+        }
+        return seriesOf(Jsoup.parse(html, url))
     }
 
     // ——— разбор выдачи ———
@@ -356,6 +375,28 @@ class KnigavuheProvider : AudiobookProvider {
 
     private fun namesOf(nodes: List<Element>): List<String> =
         nodes.map { it.text().norm() }.filter { it.isNotBlank() }.distinct()
+
+    /**
+     * `.book_serie_block`: название цикла и пронумерованный список частей. Текущая
+     * книга в списке — просто `<strong>`, без ссылки; остальные — `<a href="/book/...">`.
+     */
+    private fun seriesOf(doc: Document): BookSeries? {
+        val block = doc.selectFirst(".book_serie_block") ?: return null
+        val name = block.selectFirst(".book_serie_block_title a")?.text()?.norm()
+            ?: return null
+
+        val items = block.select(".book_serie_block_item").mapNotNull { item ->
+            val index = item.selectFirst(".book_serie_block_item_index")?.text()?.trim().orEmpty()
+            val link = item.selectFirst("a[href]")
+            val title = (link ?: item.selectFirst("strong"))?.text()?.norm() ?: return@mapNotNull null
+            val linkedBookId = link?.let { a ->
+                val href = a.absUrl("href").ifBlank { absolute(a.attr("href")) }
+                slugOf(href)?.let { composeBookId(ID, it) }
+            }
+            SeriesEntry(index = index, title = title, bookId = linkedBookId)
+        }
+        return items.takeIf { it.isNotEmpty() }?.let { BookSeries(name, it) }
+    }
 
     // ——— мелочи ———
 

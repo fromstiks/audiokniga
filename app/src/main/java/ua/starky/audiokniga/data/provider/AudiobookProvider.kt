@@ -1,6 +1,7 @@
 package ua.starky.audiokniga.data.provider
 
 import ua.starky.audiokniga.data.model.BookDetails
+import ua.starky.audiokniga.data.model.BookSeries
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.SearchResult
 
@@ -52,6 +53,12 @@ interface AudiobookProvider {
      * уже лежит в базе. `null` — обновлять нечего или источник этого не умеет.
      */
     suspend fun refreshTracks(bookId: String, chapters: List<Chapter>): List<Chapter>? = null
+
+    /**
+     * Цикл, в который входит книга, и ссылки на другие его части. `null` — источник
+     * такое не различает (большинство) или у этой книги цикла нет.
+     */
+    suspend fun series(bookId: String): BookSeries? = null
 }
 
 class ProviderException(message: String, cause: Throwable? = null) : Exception(message, cause)

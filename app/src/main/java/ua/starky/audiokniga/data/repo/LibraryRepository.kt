@@ -20,6 +20,7 @@ import ua.starky.audiokniga.data.db.BookmarkEntity
 import ua.starky.audiokniga.data.model.Book
 import ua.starky.audiokniga.data.model.Bookmark
 import ua.starky.audiokniga.data.model.BookDetails
+import ua.starky.audiokniga.data.model.BookSeries
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.ChapterOrder
 import ua.starky.audiokniga.data.model.DownloadState
@@ -173,6 +174,14 @@ class LibraryRepository(
         val details = ProviderRegistry.forBook(bookId).details(bookId)
         store(details)
         details
+    }
+
+    /**
+     * Цикл книги — отдельным запросом, а не вместе с книгой: он нужен только пока
+     * открыт плеер, а не каждый раз, когда книга просто лежит в базе.
+     */
+    suspend fun series(bookId: String): BookSeries? = withContext(Dispatchers.IO) {
+        runCatching { ProviderRegistry.forBook(bookId).series(bookId) }.getOrNull()
     }
 
     /** Запись книги и её глав в базу. Вынесено отдельно: главы приходят разными путями. */

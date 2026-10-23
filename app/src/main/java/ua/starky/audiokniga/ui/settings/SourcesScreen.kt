@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -46,6 +47,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.starky.audiokniga.data.model.CustomSource
 import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.data.provider.SourceListFormat
+import ua.starky.audiokniga.data.provider.SourcePreset
+import ua.starky.audiokniga.data.provider.SourcePresets
 import ua.starky.audiokniga.data.provider.SourceProbe
 import ua.starky.audiokniga.ui.SectionHeader
 import ua.starky.audiokniga.ui.components.AppIcons
@@ -119,6 +122,40 @@ fun SourcesScreen(
                             onToggle = { viewModel.setBuiltInEnabled(provider.id, provider.id in disabled) },
                         )
                     }
+                }
+            }
+
+            item { Spacer(Modifier.height(6.dp)) }
+            item { SectionLabel("Готовые") }
+
+            item {
+                PresetStrip(sources = sources, onAdd = viewModel::addPreset)
+            }
+
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    Text(
+                        "Проверенные открытые ленты: нажмите на карточку — источник добавится " +
+                            "в «Свои». Свой адрес по-прежнему можно вписать ниже.",
+                        color = c.inkFaint,
+                        fontSize = 11.sp,
+                        lineHeight = 16.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        "Добавить все",
+                        color = c.accent,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        modifier = Modifier
+                            .neuRaised(RoundedCornerShape(percent = 50), elevation = 3.dp)
+                            .clickable(onClick = viewModel::addMissingPresets)
+                            .padding(horizontal = 11.dp, vertical = 7.dp),
+                    )
                 }
             }
 
@@ -283,6 +320,62 @@ private fun BuiltInRow(title: String, note: String, enabled: Boolean, onToggle: 
                 lineHeight = 15.sp,
             )
         }
+    }
+}
+
+/** Полоса готовых источников: вбок, чтобы не занимать половину экрана списком. */
+@Composable
+private fun PresetStrip(sources: List<CustomSource>, onAdd: (SourcePreset) -> Unit) {
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(SourcePresets.all) { preset ->
+            PresetCard(
+                preset = preset,
+                added = sources.any { it.url.trim().equals(preset.url, true) },
+                onAdd = { onAdd(preset) },
+            )
+        }
+    }
+}
+
+/** Карточка готового источника: нажатие добавляет его в «Свои». */
+@Composable
+private fun PresetCard(preset: SourcePreset, added: Boolean, onAdd: () -> Unit) {
+    val c = Neu.colors
+    Column(
+        Modifier
+            .width(152.dp)
+            .neuRaised(RoundedCornerShape(16.dp), elevation = 4.dp)
+            .clickable(enabled = !added, onClick = onAdd)
+            .padding(horizontal = 12.dp, vertical = 11.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                imageVector = if (added) AppIcons.Check else AppIcons.Plus,
+                contentDescription = if (added) "Уже добавлен" else "Добавить источник",
+                tint = if (added) c.accent else c.inkMuted,
+                modifier = Modifier.size(11.dp),
+            )
+            Text(
+                preset.name,
+                color = if (added) c.inkFaint else c.ink,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Text(
+            if (added) "Уже добавлен" else preset.note,
+            color = c.inkFaint,
+            fontSize = 10.sp,
+            lineHeight = 13.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

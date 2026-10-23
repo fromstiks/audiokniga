@@ -63,6 +63,13 @@ interface ChapterDao {
     @Query("UPDATE chapters SET positionMs = :positionMs, completed = :completed WHERE id = :chapterId")
     suspend fun saveChapterProgress(chapterId: String, positionMs: Long, completed: Boolean)
 
+    /**
+     * Новый адрес файла у той же главы. Отдельный запрос, а не [replaceForBook]:
+     * перезапись главы целиком стёрла бы прогресс прослушивания и отметку «дослушано».
+     */
+    @Query("UPDATE chapters SET audioUrl = :audioUrl, durationMs = :durationMs WHERE id = :chapterId")
+    suspend fun updateSource(chapterId: String, audioUrl: String, durationMs: Long)
+
     @Query("DELETE FROM chapters WHERE bookId = :bookId")
     suspend fun deleteForBook(bookId: String)
 

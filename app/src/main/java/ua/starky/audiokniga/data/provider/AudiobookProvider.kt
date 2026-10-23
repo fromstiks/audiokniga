@@ -1,6 +1,7 @@
 package ua.starky.audiokniga.data.provider
 
 import ua.starky.audiokniga.data.model.BookDetails
+import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.SearchResult
 
 /**
@@ -28,10 +29,29 @@ interface AudiobookProvider {
     /** Можно ли скачивать файлы этого источника на устройство. */
     val supportsDownload: Boolean get() = true
 
+    /**
+     * Ссылки на файлы подписаны и со временем перестают работать. У таких источников
+     * приложение обновляет адреса глав перед открытием книги, иначе книга, добавленная
+     * неделю назад, «внезапно» перестала бы играть.
+     */
+    val linksExpire: Boolean get() = false
+
+    /**
+     * Узнаёт адрес своего сайта. Нужно, чтобы вставленную в поиск ссылку можно было
+     * открыть без поиска: [search] получит её как запрос.
+     */
+    fun acceptsLink(url: String): Boolean = false
+
     suspend fun search(query: String, page: Int = 1): List<SearchResult>
 
     /** Полные данные книги вместе со списком глав. */
     suspend fun details(bookId: String): BookDetails
+
+    /**
+     * Свежие адреса глав: те же идентификаторы, новые ссылки. [chapters] — то, что
+     * уже лежит в базе. `null` — обновлять нечего или источник этого не умеет.
+     */
+    suspend fun refreshTracks(bookId: String, chapters: List<Chapter>): List<Chapter>? = null
 }
 
 class ProviderException(message: String, cause: Throwable? = null) : Exception(message, cause)

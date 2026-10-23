@@ -16,6 +16,8 @@ import ua.starky.audiokniga.app
 import ua.starky.audiokniga.data.local.LocalImporter
 import ua.starky.audiokniga.data.model.CustomSource
 import ua.starky.audiokniga.data.provider.SourceListFormat
+import ua.starky.audiokniga.data.provider.SourcePreset
+import ua.starky.audiokniga.data.provider.SourcePresets
 import ua.starky.audiokniga.data.provider.SourceProbe
 import ua.starky.audiokniga.settings.SettingsStore
 
@@ -182,6 +184,57 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 append(' ')
                 append(sourceWord(added))
                 if (lines > added) append(", пропущено строк: ${lines - added}")
+            }
+        }
+    }
+
+    /** Адреса, которые прямо сейчас добавляются: второе нажатие по карточке их не дублирует. */
+    private val addingPresets = mutableSetOf<String>()
+
+    /** Массовое добавление идёт одно за раз, иначе быстрый двойной тап задвоит источники. */
+    private var addingAll = false
+
+    /**
+     * Готовый источник добавляется одним нажатием. Проверять его перед этим не нужно:
+     * ленты в готовом наборе уже проверены, а обычный адрес по-прежнему можно
+     * вписать руками и проверить кнопкой в строке.
+     */
+    fun addPreset(preset: SourcePreset) {
+        val address = preset.url.trim()
+        if (customSources.value.any { it.url.equals(address, ignoreCase = true) }) {
+            _message.value = "«${preset.name}» уже есть в списке"
+            return
+        }
+        if (!addingPresets.add(address)) return
+        viewModelScope.launch {
+            try {
+                runCatching { repo.addCustomSource(preset.name, address) }
+                    .onSuccess { _message.value = "«${preset.name}» добавлен — откройте его кнопкой справа" }
+                    .onFailure { _message.value = "Не удалось добавить: ${it.message ?: "неизвестная ошибка"}" }
+            } finally {
+                addingPresets.remove(address)
+            }
+        }
+    }
+
+    /**
+     * Все готовые источники разом: четыре нажатия по карточкам — та же работа,
+     * только дольше. Уже добавленные повторно не пишутся.
+     */
+    fun addMissingPresets() {
+        if (addingAll) return
+        val missing = SourcePresets.missing(customSources.value.map { it.url })
+        if (missing.isEmpty()) {
+            _message.value = "Все готовые источники уже добавлены"
+            return
+        }
+        addingAll = true
+        viewModelScope.launch {
+            try {
+                val added = repo.addCustomSources(missing.map { it.name to it.url })
+                _message.value = "Добавлено $added ${sourceWord(added)} — откройте любой кнопкой справа"
+            } finally {
+                addingAll = false
             }
         }
     }

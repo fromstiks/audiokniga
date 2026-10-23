@@ -12,6 +12,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import ua.starky.audiokniga.data.db.AppDatabase
 import ua.starky.audiokniga.data.db.BookEntity
 import ua.starky.audiokniga.data.db.ChapterEntity
@@ -21,6 +22,7 @@ import ua.starky.audiokniga.data.model.Bookmark
 import ua.starky.audiokniga.data.model.BookDetails
 import ua.starky.audiokniga.data.model.Chapter
 import ua.starky.audiokniga.data.model.ChapterOrder
+import ua.starky.audiokniga.data.model.DownloadState
 import ua.starky.audiokniga.data.model.SearchResult
 import ua.starky.audiokniga.data.model.SourceMode
 import ua.starky.audiokniga.data.db.CustomSourceEntity
@@ -31,6 +33,7 @@ import ua.starky.audiokniga.data.model.Playlist
 import ua.starky.audiokniga.data.provider.CustomProvider
 import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.data.provider.RssProvider
+import ua.starky.audiokniga.download.DownloadTracker
 import java.util.UUID
 
 /** Место, на котором книгу оставили в прошлый раз. */
@@ -77,7 +80,10 @@ data class SearchProgress(
     }
 }
 
-class LibraryRepository(context: Context) {
+class LibraryRepository(
+    context: Context,
+    private val downloads: DownloadTracker,
+) {
 
     private val db = AppDatabase.get(context)
     private val books = db.bookDao()
@@ -122,9 +128,12 @@ class LibraryRepository(context: Context) {
             return@channelFlow
         }
 
-        // Ссылку разбираем как ленту, слово отправляем во все поисковые источники.
+        // Ссылку разбирает тот источник, который узнал свой сайт: у него для этого
+        // есть разбор карточки. Не узнал никто — значит, это лента или страница
+        // с аудио, и её берёт универсальный разборщик.
         val providers = if (trimmed.startsWith("http", ignoreCase = true)) {
-            ProviderRegistry.all.filter { it.id == RssProvider.ID }
+            ProviderRegistry.enabled.filter { it.acceptsLink(trimmed) }
+                .ifEmpty { ProviderRegistry.all.filter { it.id == RssProvider.ID } }
         } else {
             ProviderRegistry.searchable
         }
@@ -217,8 +226,55 @@ class LibraryRepository(context: Context) {
 
     suspend fun ensureLoaded(bookId: String): List<Chapter> = withContext(Dispatchers.IO) {
         val stored = chapters.getChapters(bookId)
-        if (stored.isNotEmpty()) stored.map { it.toChapter() }
-        else addToLibrary(bookId).chapters
+        if (stored.isEmpty()) return@withContext addToLibrary(bookId).chapters
+        refreshLinks(bookId, stored) ?: stored.map { it.toChapter() }
+    }
+
+    /**
+     * Обновляет подписанные адреса глав у источников, у которых они истекают.
+     *
+     * Главы, уже лежащие на устройстве, не трогаем: загрузчик и кэш держат файл
+     * под старым адресом, и после подмены офлайн-режим перестал бы его находить.
+     * Если сеть недоступна, остаёмся на сохранённых адресах — плеер скажет сам,
+     * если они уже не работают.
+     */
+    private suspend fun refreshLinks(
+        bookId: String,
+        stored: List<ChapterEntity>,
+    ): List<Chapter>? {
+        val provider = runCatching { ProviderRegistry.forBook(bookId) }.getOrNull() ?: return null
+        if (!provider.linksExpire) return null
+
+        val current = stored.map { it.toChapter() }
+        // Индекс загрузок — вспомогательная вещь: если он вдруг не прочитался,
+        // книгу всё равно надо открыть.
+        val onDevice = runCatching { downloads.snapshot() }.getOrDefault(emptyMap())
+            .filterValues { it.state == DownloadState.DOWNLOADED }
+            .keys
+
+        val fresh = try {
+            // Ждать сайт дольше нескольких секунд незачем: книга должна открываться
+            // и с протухшими, и с вовсе недоступными ссылками — плеер скажет точнее.
+            withTimeoutOrNull(REFRESH_TIMEOUT_MS) { provider.refreshTracks(bookId, current) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            null
+        } ?: return null
+
+        val byId = fresh.associateBy { it.id }
+        for (row in stored) {
+            if (row.id in onDevice) continue
+            val updated = byId[row.id] ?: continue
+            if (updated.audioUrl != row.audioUrl || updated.durationMs != row.durationMs) {
+                // Не записалось — не беда: в этот раз играем по свежим адресам,
+                // а в базу они попадут при следующем открытии.
+                runCatching { chapters.updateSource(row.id, updated.audioUrl, updated.durationMs) }
+            }
+        }
+        return current.map { chapter ->
+            if (chapter.id in onDevice) chapter else byId[chapter.id] ?: chapter
+        }
     }
 
     suspend fun setSourceMode(bookId: String, mode: SourceMode) = books.setSourceMode(bookId, mode.ordinal)
@@ -431,4 +487,9 @@ class LibraryRepository(context: Context) {
         durationMs = durationMs,
         sizeBytes = sizeBytes,
     )
+
+    private companion object {
+        /** Сколько ждём обновления подписанных ссылок, прежде чем открыть книгу без него. */
+        const val REFRESH_TIMEOUT_MS = 8_000L
+    }
 }

@@ -45,8 +45,10 @@ class App : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        repository = LibraryRepository(this)
+        // Загрузчик нужен репозиторию: у источников с истекающими ссылками он
+        // подсказывает, какие главы уже лежат на устройстве и менять их адрес нельзя.
         downloads = DownloadTracker(this)
+        repository = LibraryRepository(this, downloads)
         settings = SettingsStore(this)
         playback = PlaybackController(this, repository, downloads, scope)
 

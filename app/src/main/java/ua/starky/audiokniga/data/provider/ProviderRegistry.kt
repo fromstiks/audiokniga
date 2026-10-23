@@ -13,6 +13,7 @@ object ProviderRegistry {
     private val builtIn: List<AudiobookProvider> = listOf(
         ArchiveOrgProvider(),
         LibriVoxProvider(),
+        KnigavuheProvider(),
         PodcastProvider(),
         RssProvider(),
     )

@@ -66,6 +66,7 @@ class PlaybackController(
     init {
         connection.connect { ready.complete(Unit) }
         startProgressAutosave()
+        startSaveOnPause()
     }
 
     /**
@@ -109,6 +110,11 @@ class PlaybackController(
 
     private suspend fun fillQueue(bookId: String, mode: SourceMode, play: Boolean, keepPosition: Boolean) {
         val chapters = queueFor(bookId, mode)
+
+        // Уходящую книгу сохраняем до подмены очереди: после setQueue state уже про новую.
+        if (queuedBookId != null && queuedBookId != bookId) {
+            runCatching { saveProgress() }
+        }
 
         if (chapters.isEmpty()) {
             queuedBookId = null
@@ -384,6 +390,21 @@ class PlaybackController(
             while (true) {
                 delay(5_000)
                 if (state.value.isPlaying) runCatching { saveProgress() }
+            }
+        }
+    }
+
+    /**
+     * Пауза тоже фиксирует место: автосейв работает только при воспроизведении,
+     * а переключиться на другую книгу можно и с паузы.
+     */
+    private fun startSaveOnPause() {
+        scope.launch {
+            var wasPlaying = false
+            state.collect {
+                val paused = wasPlaying && !it.isPlaying
+                wasPlaying = it.isPlaying
+                if (paused) runCatching { saveProgress() }
             }
         }
     }

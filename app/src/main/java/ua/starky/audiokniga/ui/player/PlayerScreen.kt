@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
@@ -91,6 +92,12 @@ fun PlayerScreen(
     var pickerOpen by remember { mutableStateOf(false) }
     var sleepOpen by remember { mutableStateOf(false) }
     var marksOpen by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val currentIndex = state.chapters.indexOfFirst { it.isCurrent }
+    // Ключ — индекс текущей главы: прокрутка срабатывает при смене главы, а не на каждой перерисовке.
+    LaunchedEffect(currentIndex) {
+        if (currentIndex >= 0) listState.animateScrollToItem(currentIndex)
+    }
 
     LaunchedEffect(state.message) {
         if (state.message != null) {
@@ -330,6 +337,7 @@ fun PlayerScreen(
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f).navigationBarsPadding(),
+                state = listState,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(bottom = 18.dp),
             ) {
@@ -878,8 +886,11 @@ private fun ChapterRow(
         modifier = Modifier
             .fillMaxWidth()
             .then(
-                if (item.isCurrent) Modifier.neuSunken(shape, depth = 3.dp)
-                else Modifier.neuRaised(shape, elevation = 4.dp)
+                if (item.isCurrent) {
+                    Modifier.neuSunken(shape, depth = 3.dp).background(c.accent.copy(alpha = 0.14f), shape)
+                } else {
+                    Modifier.neuRaised(shape, elevation = 4.dp)
+                }
             )
             .clickable(onClick = onPlay)
             .padding(horizontal = 12.dp, vertical = 10.dp),
@@ -896,7 +907,7 @@ private fun ChapterRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = item.chapter.title,
-                color = c.ink,
+                color = if (item.isCurrent) c.accent else c.ink,
                 fontSize = 12.5.sp,
                 fontWeight = if (item.isCurrent) FontWeight.Bold else FontWeight.SemiBold,
                 maxLines = 1,

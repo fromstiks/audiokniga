@@ -2,14 +2,17 @@ package ua.starky.audiokniga.ui.library
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -21,10 +24,13 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalTextStyle
@@ -48,7 +54,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ua.starky.audiokniga.data.model.Book
 import ua.starky.audiokniga.data.model.Playlist
 import ua.starky.audiokniga.data.model.ShelfFilter
-import ua.starky.audiokniga.data.provider.ProviderRegistry
 import ua.starky.audiokniga.ui.SectionHeader
 import ua.starky.audiokniga.ui.components.AppIcons
 import ua.starky.audiokniga.ui.components.BookCover
@@ -164,18 +169,17 @@ fun LibraryScreen(
                 ) {
                     LazyColumn(
                         Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(11.dp),
                         contentPadding = PaddingValues(bottom = 12.dp),
                     ) {
-                        items(books, key = { it.id }) { book ->
-                            BookRow(
-                                book = book,
-                                source = ProviderRegistry.displayName(book.providerId),
-                                playing = playback.isPlaying && playback.bookId == book.id,
+                        // Каждый элемент списка — одна полка из трёх книг.
+                        items(books.chunked(3), key = { row -> row.first().id }) { row ->
+                            ShelfRow(
+                                books = row,
+                                isPlaying = { book -> playback.isPlaying && playback.bookId == book.id },
                                 inPlaylist = filter is ShelfFilter.InPlaylist,
-                                onOpen = { onOpenBook(book.id) },
-                                onToggleFavorite = { viewModel.toggleFavorite(book) },
-                                onRemove = {
+                                onOpen = { book -> onOpenBook(book.id) },
+                                onToggleFavorite = { book -> viewModel.toggleFavorite(book) },
+                                onRemove = { book ->
                                     if (filter is ShelfFilter.InPlaylist) viewModel.removeFromCurrentPlaylist(book)
                                     else viewModel.remove(book.id)
                                 },
@@ -467,66 +471,127 @@ private fun EmptyFilter(filter: ShelfFilter, onShowAll: () -> Unit) {
     }
 }
 
+/**
+ * Одна полка: три книги стоят на планке, подписи — под ней.
+ * Подписи вынесены под планку, а не над ней, чтобы книги действительно «стояли» на полке.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BookRow(
-    book: Book,
-    source: String,
-    playing: Boolean,
+private fun ShelfRow(
+    books: List<Book>,
+    isPlaying: (Book) -> Boolean,
     inPlaylist: Boolean,
-    onOpen: () -> Unit,
-    onToggleFavorite: () -> Unit,
-    onRemove: () -> Unit,
+    onOpen: (Book) -> Unit,
+    onToggleFavorite: (Book) -> Unit,
+    onRemove: (Book) -> Unit,
 ) {
     val c = Neu.colors
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .neuRaised(RoundedCornerShape(20.dp), elevation = 6.dp)
-            .clickable(onClick = onOpen)
-            .padding(13.dp),
-        horizontalArrangement = Arrangement.spacedBy(13.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        BookCover(
-            title = book.title,
-            coverUrl = book.coverUrl,
-            modifier = Modifier.size(62.dp).clip(RoundedCornerShape(16.dp)),
-            fontSize = 7,
-        )
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                book.title,
-                color = c.ink,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(book.author, color = c.inkMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(
-                if (playing) "Играет · $source" else source,
-                color = if (playing) c.accent else c.inkFaint,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 0.9.sp,
-            )
-        }
-        Column(
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+    // Звёздочку и удаление на сетке не разместить, поэтому действия — по долгому нажатию.
+    var menuFor by remember { mutableStateOf<String?>(null) }
+    val gap = Arrangement.spacedBy(10.dp)
+    val coverShape = RoundedCornerShape(10.dp)
+
+    Column(Modifier.padding(bottom = 18.dp)) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = gap,
+            verticalAlignment = Alignment.Bottom,
         ) {
-            Icon(
-                imageVector = if (book.favorite) AppIcons.StarFilled else AppIcons.Star,
-                contentDescription = if (book.favorite) "Убрать из избранного" else "В избранное",
-                tint = if (book.favorite) c.offline else c.inkFaint,
-                modifier = Modifier.size(17.dp).clickable(onClick = onToggleFavorite),
-            )
-            Icon(
-                imageVector = if (inPlaylist) AppIcons.Close else AppIcons.Trash,
-                contentDescription = if (inPlaylist) "Убрать из списка" else "Убрать из библиотеки",
-                tint = c.inkFaint,
-                modifier = Modifier.size(16.dp).clickable(onClick = onRemove),
-            )
+            books.forEach { book ->
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .combinedClickable(
+                            onClick = { onOpen(book) },
+                            onLongClick = { menuFor = book.id },
+                        ),
+                ) {
+                    BookCover(
+                        title = book.title,
+                        coverUrl = book.coverUrl,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(0.68f)
+                            .neuRaised(coverShape, elevation = 5.dp)
+                            .clip(coverShape),
+                        fontSize = 9,
+                    )
+                    if (book.favorite) {
+                        Box(
+                            Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(5.dp)
+                                .size(20.dp)
+                                .neuRaised(CircleShape, elevation = 3.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                AppIcons.StarFilled,
+                                null,
+                                tint = c.offline,
+                                modifier = Modifier.size(11.dp),
+                            )
+                        }
+                    }
+                    DropdownMenu(
+                        expanded = menuFor == book.id,
+                        onDismissRequest = { menuFor = null },
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(if (book.favorite) "Убрать из избранного" else "В избранное") },
+                            onClick = { menuFor = null; onToggleFavorite(book) },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (inPlaylist) "Убрать из списка" else "Убрать из библиотеки") },
+                            onClick = { menuFor = null; onRemove(book) },
+                        )
+                    }
+                }
+            }
+            // Пустые места в неполном ряду: иначе последняя книга растянется на всю ширину.
+            repeat(3 - books.size) { Spacer(Modifier.weight(1f)) }
+        }
+
+        // Планка: тонкая объёмная полоса на всю ширину ряда.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(10.dp)
+                .neuRaised(RoundedCornerShape(4.dp), elevation = 4.dp),
+        )
+
+        Spacer(Modifier.height(6.dp))
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = gap) {
+            books.forEach { book ->
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .combinedClickable(
+                            onClick = { onOpen(book) },
+                            onLongClick = { menuFor = book.id },
+                        ),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        book.title,
+                        // Играющая книга подсвечивается акцентом — по нему понятно, что сейчас звучит.
+                        color = if (isPlaying(book)) c.accent else c.ink,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        book.author,
+                        color = c.inkMuted,
+                        fontSize = 10.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            repeat(3 - books.size) { Spacer(Modifier.weight(1f)) }
         }
     }
 }

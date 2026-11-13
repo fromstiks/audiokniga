@@ -50,14 +50,33 @@
                 android:resource="@xml/widget_player_info" />
         </receiver>
 
+        <!--
+            MediaBrowserService в фильтре — для старых клиентов чужих приложений
+            (виджеты вроде KLWP, автомагнитолы, часы): они ищут плееры именно по
+            этому действию и без него не видят, что приложение вообще играет.
+            Media3 отвечает им через свою legacy-прослойку, свой код этого не касается.
+        -->
         <service
             android:name=".playback.PlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback">
             <intent-filter>
                 <action android:name="androidx.media3.session.MediaSessionService" />
+                <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+
+        <!--
+            Кнопки на гарнитуре и в машине: без приёмника они доходят только пока
+            сессия жива, а после остановки сервиса нажатие уходит в пустоту.
+        -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
 
         <!--
           Планировщик Media3: без него загрузки не возобновляются после перезапуска
